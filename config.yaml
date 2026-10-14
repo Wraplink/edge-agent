@@ -4,13 +4,14 @@ dns_control:
 
 agent:
   id: "edge-agent-01"
+  region: "eu-1"
   interval: 10s
   capacity:
     sni: 5000
     route: 1000
+
 edge:
   addresses:
     - "185.80.196.100"
     - "185.80.196.101"
     - "185.80.196.102"
-
