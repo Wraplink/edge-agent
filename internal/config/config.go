@@ -22,6 +22,7 @@ type DNSControlConfig struct {
 
 type AgentConfig struct {
 	ID       string         `yaml:"id"`
+	Region   string         `yaml:"region"`
 	Interval time.Duration  `yaml:"interval"`
 	Capacity CapacityConfig `yaml:"capacity"`
 }
@@ -38,64 +39,50 @@ type EdgeConfig struct {
 func Load(filename string) (Config, error) {
 	data, err := os.ReadFile(filename)
 	if err != nil {
-		return Config{}, fmt.Errorf(
-			"read config %q: %w",
-			filename,
-			err,
-		)
+		return Config{}, fmt.Errorf("read config %q: %w", filename, err)
 	}
 
 	var cfg Config
-
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
-		return Config{}, fmt.Errorf(
-			"parse config %q: %w",
-			filename,
-			err,
-		)
+		return Config{}, fmt.Errorf("parse config %q: %w", filename, err)
+	}
+
+	cfg.DNSControl.URL = strings.TrimRight(strings.TrimSpace(cfg.DNSControl.URL), "/")
+	cfg.Agent.ID = strings.TrimSpace(cfg.Agent.ID)
+	cfg.Agent.Region = strings.TrimSpace(cfg.Agent.Region)
+	for i := range cfg.Edge.Addresses {
+		cfg.Edge.Addresses[i] = strings.TrimSpace(cfg.Edge.Addresses[i])
 	}
 
 	if err := cfg.Validate(); err != nil {
 		return Config{}, err
 	}
-
 	return cfg, nil
 }
 
 func (c Config) Validate() error {
-	c.DNSControl.URL = strings.TrimRight(
-		strings.TrimSpace(c.DNSControl.URL),
-		"/",
-	)
-
 	if c.DNSControl.URL == "" {
 		return fmt.Errorf("dns_control.url is required")
 	}
-
 	if c.Agent.ID == "" {
 		return fmt.Errorf("agent.id is required")
 	}
-
 	if c.Agent.Interval <= 0 {
 		return fmt.Errorf("agent.interval must be greater than zero")
 	}
-
-	if len(c.Edge.Addresses) == 0 {
-		return fmt.Errorf(
-			"edge.addresses must contain at least one address",
-		)
+	if c.Agent.Capacity.SNI < 0 || c.Agent.Capacity.Route < 0 {
+		return fmt.Errorf("agent capacity cannot be negative")
 	}
-
+	if c.Agent.Capacity.SNI == 0 && c.Agent.Capacity.Route == 0 {
+		return fmt.Errorf("at least one agent capacity must be greater than zero")
+	}
+	if len(c.Edge.Addresses) == 0 {
+		return fmt.Errorf("edge.addresses must contain at least one address")
+	}
 	for i, address := range c.Edge.Addresses {
-		address = strings.TrimSpace(address)
-
 		if address == "" {
-			return fmt.Errorf(
-				"edge.addresses[%d] cannot be empty",
-				i,
-			)
+			return fmt.Errorf("edge.addresses[%d] cannot be empty", i)
 		}
 	}
-
 	return nil
 }
