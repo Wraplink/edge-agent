@@ -80,6 +80,7 @@ type HeartbeatResponse struct {
 	Registered          bool          `json:"registered"`
 	Revision            uint64        `json:"revision"`
 	ReleaseLeaseIDs     []string      `json:"release_lease_ids,omitempty"`
+	EntitlementEnforced bool          `json:"entitlement_enforced"`
 	EntitlementRevision uint64        `json:"entitlement_revision"`
 	Entitlements        []AccessGrant `json:"entitlements,omitempty"`
 }
