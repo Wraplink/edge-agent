@@ -10,13 +10,18 @@ import (
 
 	"github.com/wraplink/edge-agent/internal/allocator"
 	"github.com/wraplink/edge-agent/internal/client"
-	"github.com/wraplink/edge-agent/internal/dataplane"
 )
 
 const (
 	TypeSNI   = "sni"
 	TypeRoute = "route"
 )
+
+type Dataplane interface {
+	Apply(context.Context, client.Lease) error
+	Remove(context.Context, string) error
+	ReplaceAccessGrants(context.Context, bool, []client.AccessGrant) error
+}
 
 type Agent struct {
 	id       string
@@ -30,10 +35,16 @@ type Agent struct {
 
 	sniAllocator   allocator.SNIAllocator
 	routeAllocator allocator.RouteAllocator
-	dataplane      *dataplane.Manager
+	dataplane      Dataplane
 
-	mu     sync.RWMutex
+	mu sync.RWMutex
+
 	active map[string]client.Lease
+
+	entitlementConfigured bool
+	entitlementEnforced   bool
+	entitlementRevision   uint64
+	entitlements          map[string]client.AccessGrant
 }
 
 func New(
@@ -45,7 +56,7 @@ func New(
 	dnsClient *client.Client,
 	sniAllocator allocator.SNIAllocator,
 	routeAllocator allocator.RouteAllocator,
-	dataplaneManager *dataplane.Manager,
+	dataplaneManager Dataplane,
 ) *Agent {
 	return &Agent{
 		id:             id,
@@ -58,6 +69,7 @@ func New(
 		routeAllocator: routeAllocator,
 		dataplane:      dataplaneManager,
 		active:         make(map[string]client.Lease),
+		entitlements:   make(map[string]client.AccessGrant),
 	}
 }
 
@@ -262,28 +274,96 @@ func (a *Agent) reportFailure(ctx context.Context, lease client.Lease) error {
 // with zero active leases so dns-control can track an idle edge as healthy.
 func (a *Agent) sendHeartbeat(ctx context.Context) error {
 	leaseIDs := a.activeLeaseIDs()
+	entitlementRevision := a.currentEntitlementRevision()
 
-	response, err := a.dnsClient.Heartbeat(ctx, a.id, leaseIDs)
+	response, err := a.dnsClient.Heartbeat(
+		ctx,
+		a.id,
+		leaseIDs,
+		entitlementRevision,
+	)
 	if err != nil {
 		return err
 	}
 
-	var releaseErrs []error
+	var reconcileErrs []error
+
+	if a.entitlementSyncRequired(response) {
+		if err := a.replaceEntitlements(
+			ctx,
+			response.EntitlementEnforced,
+			response.EntitlementRevision,
+			response.Entitlements,
+		); err != nil {
+			reconcileErrs = append(reconcileErrs, err)
+		}
+	}
+
 	for _, leaseID := range response.ReleaseLeaseIDs {
 		if err := a.releaseLease(ctx, leaseID); err != nil {
-			releaseErrs = append(releaseErrs, fmt.Errorf("release lease %s: %w", leaseID, err))
+			reconcileErrs = append(reconcileErrs, fmt.Errorf("release lease %s: %w", leaseID, err))
 		}
 	}
 
 	if !response.Registered {
 		if err := a.register(ctx); err != nil {
-			releaseErrs = append(releaseErrs, fmt.Errorf("re-register agent: %w", err))
+			reconcileErrs = append(reconcileErrs, fmt.Errorf("re-register agent: %w", err))
 		} else {
 			log.Printf("agent: re-registered after dns-control state reset")
 		}
 	}
 
-	return errors.Join(releaseErrs...)
+	return errors.Join(reconcileErrs...)
+}
+
+func (a *Agent) entitlementSyncRequired(response client.HeartbeatResponse) bool {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+
+	return !a.entitlementConfigured ||
+		a.entitlementEnforced != response.EntitlementEnforced ||
+		a.entitlementRevision != response.EntitlementRevision
+}
+
+func (a *Agent) replaceEntitlements(
+	ctx context.Context,
+	enforced bool,
+	revision uint64,
+	grants []client.AccessGrant,
+) error {
+	if a.dataplane == nil {
+		return fmt.Errorf("dataplane manager is nil")
+	}
+
+	if err := a.dataplane.ReplaceAccessGrants(ctx, enforced, grants); err != nil {
+		return fmt.Errorf("apply entitlement revision %d: %w", revision, err)
+	}
+
+	items := make(map[string]client.AccessGrant, len(grants))
+	for _, grant := range grants {
+		items[grant.ClientIP] = grant
+	}
+
+	a.mu.Lock()
+	a.entitlementConfigured = true
+	a.entitlementEnforced = enforced
+	a.entitlementRevision = revision
+	a.entitlements = items
+	a.mu.Unlock()
+
+	log.Printf(
+		"agent: entitlement access synchronized enforced=%t revision=%d clients=%d",
+		enforced,
+		revision,
+		len(items),
+	)
+	return nil
+}
+
+func (a *Agent) currentEntitlementRevision() uint64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.entitlementRevision
 }
 
 func (a *Agent) releaseLease(ctx context.Context, leaseID string) error {
