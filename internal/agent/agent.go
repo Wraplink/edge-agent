@@ -80,15 +80,10 @@ func (a *Agent) register(ctx context.Context) error {
 }
 
 func (a *Agent) cycle(ctx context.Context) error {
-	// Registration is idempotent. Refresh it every cycle so an agent
-	// automatically recovers when dns-control restarts and loses its
-	// in-memory registry.
 	if err := a.register(ctx); err != nil {
 		return fmt.Errorf("refresh agent registration: %w", err)
 	}
 
-	// Heartbeat is sent even with zero active leases. Idle edges must
-	// remain visible to the control plane as healthy capacity.
 	if err := a.sendHeartbeat(ctx); err != nil {
 		log.Printf("agent: heartbeat failed: %v", err)
 	}
@@ -232,8 +227,12 @@ func (a *Agent) availableSlots() int {
 
 	sniAvailable := a.sniCapacity - sniUsed
 	routeAvailable := a.routeCapacity - routeUsed
-	if sniAvailable < 0 { sniAvailable = 0 }
-	if routeAvailable < 0 { routeAvailable = 0 }
+	if sniAvailable < 0 {
+		sniAvailable = 0
+	}
+	if routeAvailable < 0 {
+		routeAvailable = 0
+	}
 	return sniAvailable + routeAvailable
 }
 
@@ -242,13 +241,19 @@ func (a *Agent) countActive(leaseType string) int {
 	defer a.mu.RUnlock()
 	count := 0
 	for _, lease := range a.active {
-		if lease.Type == leaseType { count++ }
+		if lease.Type == leaseType {
+			count++
+		}
 	}
 	return count
 }
 
 func formatPortRange(start, end uint16) string {
-	if start == 0 && end == 0 { return "all" }
-	if start == end { return fmt.Sprintf("%d", start) }
+	if start == 0 && end == 0 {
+		return "all"
+	}
+	if start == end {
+		return fmt.Sprintf("%d", start)
+	}
 	return fmt.Sprintf("%d-%d", start, end)
 }
