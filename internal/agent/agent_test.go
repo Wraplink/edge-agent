@@ -3,6 +3,7 @@ package agent
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/wraplink/edge-agent/internal/allocator"
 	"github.com/wraplink/edge-agent/internal/client"
@@ -21,6 +22,19 @@ func (f *fakeSNIAllocator) Release(context.Context, string, allocator.Result) er
 	return nil
 }
 
+type fakeDataplane struct {
+	enforced bool
+	grants   []client.AccessGrant
+}
+
+func (f *fakeDataplane) Apply(context.Context, client.Lease) error { return nil }
+func (f *fakeDataplane) Remove(context.Context, string) error      { return nil }
+func (f *fakeDataplane) ReplaceAccessGrants(_ context.Context, enforced bool, grants []client.AccessGrant) error {
+	f.enforced = enforced
+	f.grants = append([]client.AccessGrant(nil), grants...)
+	return nil
+}
+
 func TestReleaseSNILeaseRemovesActiveState(t *testing.T) {
 	sni := &fakeSNIAllocator{}
 	a := &Agent{
@@ -35,7 +49,6 @@ func TestReleaseSNILeaseRemovesActiveState(t *testing.T) {
 			},
 		},
 	}
-
 	if err := a.releaseLease(context.Background(), "lease-1"); err != nil {
 		t.Fatalf("release lease: %v", err)
 	}
@@ -56,9 +69,53 @@ func TestAvailableCapacityIsSeparatedByType(t *testing.T) {
 			"r1": {ID: "r1", Type: TypeRoute},
 		},
 	}
-
 	sni, routeCapacity := a.availableCapacity()
 	if sni != 2 || routeCapacity != 1 {
 		t.Fatalf("expected sni=2 route=1, got sni=%d route=%d", sni, routeCapacity)
+	}
+}
+
+func TestReplaceEntitlementsAppliesFullSnapshot(t *testing.T) {
+	dataplane := &fakeDataplane{}
+	a := &Agent{
+		dataplane:    dataplane,
+		active:       make(map[string]client.Lease),
+		entitlements: make(map[string]client.AccessGrant),
+	}
+	grants := []client.AccessGrant{{EntitlementID: "ent-1", SubscriptionID: "sub-1", ClientIP: "203.0.113.10", ExpiresAt: time.Now().UTC().Add(time.Hour)}}
+	if err := a.replaceEntitlements(context.Background(), true, 7, grants); err != nil {
+		t.Fatalf("replace entitlements: %v", err)
+	}
+	if !dataplane.enforced || len(dataplane.grants) != 1 {
+		t.Fatalf("unexpected dataplane snapshot: enforced=%t grants=%d", dataplane.enforced, len(dataplane.grants))
+	}
+	if !a.entitlementConfigured || !a.entitlementEnforced || a.entitlementRevision != 7 {
+		t.Fatalf("unexpected entitlement state: configured=%t enforced=%t revision=%d", a.entitlementConfigured, a.entitlementEnforced, a.entitlementRevision)
+	}
+	if _, ok := a.entitlements["203.0.113.10"]; !ok {
+		t.Fatal("expected grant to be indexed by client IP")
+	}
+}
+
+func TestReplaceEntitlementsAcceptsEmptyRevocationSnapshot(t *testing.T) {
+	dataplane := &fakeDataplane{}
+	a := &Agent{
+		dataplane:             dataplane,
+		active:                make(map[string]client.Lease),
+		entitlementConfigured: true,
+		entitlementEnforced:   true,
+		entitlementRevision:   4,
+		entitlements: map[string]client.AccessGrant{
+			"203.0.113.10": {ClientIP: "203.0.113.10"},
+		},
+	}
+	if err := a.replaceEntitlements(context.Background(), true, 5, []client.AccessGrant{}); err != nil {
+		t.Fatalf("replace entitlements: %v", err)
+	}
+	if len(dataplane.grants) != 0 || len(a.entitlements) != 0 {
+		t.Fatal("empty entitlement snapshot must revoke every client")
+	}
+	if a.entitlementRevision != 5 {
+		t.Fatalf("expected revision 5, got %d", a.entitlementRevision)
 	}
 }

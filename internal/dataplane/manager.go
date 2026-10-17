@@ -28,6 +28,24 @@ func NewManager() (*Manager, error) {
 	}, nil
 }
 
+func (m *Manager) ReplaceAccessGrants(
+	ctx context.Context,
+	enforced bool,
+	grants []client.AccessGrant,
+) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	if m.nft == nil {
+		return fmt.Errorf("nft dataplane is not configured")
+	}
+
+	if err := m.nft.ReplaceAllowedSources(ctx, enforced, grants); err != nil {
+		return fmt.Errorf("replace nft access grants: %w", err)
+	}
+	return nil
+}
+
 func (m *Manager) Apply(
 	ctx context.Context,
 	lease client.Lease,
@@ -46,56 +64,23 @@ func (m *Manager) Apply(
 	}
 
 	if lease.Address == "" {
-		return fmt.Errorf(
-			"lease %s has no edge address",
-			lease.ID,
-		)
+		return fmt.Errorf("lease %s has no edge address", lease.ID)
 	}
-
 	if lease.DestinationIP == "" {
-		return fmt.Errorf(
-			"lease %s has no destination IP",
-			lease.ID,
-		)
+		return fmt.Errorf("lease %s has no destination IP", lease.ID)
+	}
+	if lease.Protocol != "tcp" && lease.Protocol != "udp" {
+		return fmt.Errorf("lease %s has invalid protocol %q", lease.ID, lease.Protocol)
 	}
 
-	if lease.Protocol != "tcp" &&
-		lease.Protocol != "udp" {
-		return fmt.Errorf(
-			"lease %s has invalid protocol %q",
-			lease.ID,
-			lease.Protocol,
-		)
-	}
-
-	// Port semantics:
-	//
-	// 0 / 0
-	//     = all destination ports
-	//
-	// start / end
-	//     = match destination port range
-	//
-	// The original destination port is preserved by DNAT.
-	if lease.DestinationPortStart != 0 ||
-		lease.DestinationPortEnd != 0 {
-
+	if lease.DestinationPortStart != 0 || lease.DestinationPortEnd != 0 {
 		if lease.DestinationPortStart == 0 {
-			return fmt.Errorf(
-				"lease %s has invalid destination port range: start is 0",
-				lease.ID,
-			)
+			return fmt.Errorf("lease %s has invalid destination port range: start is 0", lease.ID)
 		}
-
 		if lease.DestinationPortEnd == 0 {
-			return fmt.Errorf(
-				"lease %s has invalid destination port range: end is 0",
-				lease.ID,
-			)
+			return fmt.Errorf("lease %s has invalid destination port range: end is 0", lease.ID)
 		}
-
-		if lease.DestinationPortStart >
-			lease.DestinationPortEnd {
+		if lease.DestinationPortStart > lease.DestinationPortEnd {
 			return fmt.Errorf(
 				"lease %s has invalid destination port range: %d-%d",
 				lease.ID,
@@ -108,24 +93,15 @@ func (m *Manager) Apply(
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	// Already applied.
 	if _, exists := m.active[lease.ID]; exists {
 		return nil
 	}
 
-	if err := m.nft.AddRoute(
-		ctx,
-		lease,
-	); err != nil {
-		return fmt.Errorf(
-			"add nft route %s: %w",
-			lease.ID,
-			err,
-		)
+	if err := m.nft.AddRoute(ctx, lease); err != nil {
+		return fmt.Errorf("add nft route %s: %w", lease.ID, err)
 	}
 
 	m.active[lease.ID] = lease
-
 	return nil
 }
 
@@ -136,7 +112,6 @@ func (m *Manager) Remove(
 	if err := ctx.Err(); err != nil {
 		return err
 	}
-
 	if leaseID == "" {
 		return fmt.Errorf("lease id is required")
 	}
@@ -149,18 +124,10 @@ func (m *Manager) Remove(
 		return nil
 	}
 
-	if err := m.nft.RemoveRoute(
-		ctx,
-		lease,
-	); err != nil {
-		return fmt.Errorf(
-			"remove nft route %s: %w",
-			leaseID,
-			err,
-		)
+	if err := m.nft.RemoveRoute(ctx, lease); err != nil {
+		return fmt.Errorf("remove nft route %s: %w", leaseID, err)
 	}
 
 	delete(m.active, leaseID)
-
 	return nil
 }
