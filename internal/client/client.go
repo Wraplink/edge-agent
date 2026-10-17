@@ -71,10 +71,12 @@ func (c *Client) Heartbeat(
 	ctx context.Context,
 	agentID string,
 	leaseIDs []string,
+	entitlementRevision uint64,
 ) (HeartbeatResponse, error) {
 	reqBody := HeartbeatRequest{
-		AgentID:  agentID,
-		LeaseIDs: leaseIDs,
+		AgentID:             agentID,
+		LeaseIDs:            leaseIDs,
+		EntitlementRevision: entitlementRevision,
 	}
 
 	var resp HeartbeatResponse
