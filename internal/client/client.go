@@ -20,110 +20,78 @@ type Client struct {
 func New(baseURL, token string) *Client {
 	return &Client{
 		baseURL: strings.TrimRight(strings.TrimSpace(baseURL), "/"),
-		token:   token,
+		token:   strings.TrimSpace(token),
 		httpClient: &http.Client{
 			Timeout: 10 * time.Second,
 		},
 	}
 }
 
-// Register sends the agent identity and capacity to dns-control.
 func (c *Client) Register(
 	ctx context.Context,
 	agentID string,
+	region string,
 	sniCapacity int,
 	routeCapacity int,
 ) error {
-
 	reqBody := RegisterRequest{
 		AgentID: agentID,
+		Region:  region,
+		Capacity: Capacity{
+			SNI:   sniCapacity,
+			Route: routeCapacity,
+		},
 	}
 
-	reqBody.Capacity.SNI = sniCapacity
-	reqBody.Capacity.Route = routeCapacity
-
-	return c.post(
-		ctx,
-		"/api/v1/agent/register",
-		reqBody,
-		nil,
-	)
+	return c.post(ctx, "/api/v1/agent/register", reqBody, nil)
 }
 
-// Poll requests new leases from dns-control.
 func (c *Client) Poll(
 	ctx context.Context,
 	agentID string,
-	max int,
+	sniAvailable int,
+	routeAvailable int,
 ) (PollResponse, error) {
-
 	reqBody := PollRequest{
 		AgentID: agentID,
-		Max:     max,
+		Available: Capacity{
+			SNI:   sniAvailable,
+			Route: routeAvailable,
+		},
 	}
 
 	var resp PollResponse
-
-	if err := c.post(
-		ctx,
-		"/api/v1/agent/poll",
-		reqBody,
-		&resp,
-	); err != nil {
+	if err := c.post(ctx, "/api/v1/agent/poll", reqBody, &resp); err != nil {
 		return PollResponse{}, err
 	}
-
 	return resp, nil
 }
 
-// Heartbeat renews active leases.
 func (c *Client) Heartbeat(
 	ctx context.Context,
 	agentID string,
 	leaseIDs []string,
-) error {
-
+) (HeartbeatResponse, error) {
 	reqBody := HeartbeatRequest{
 		AgentID:  agentID,
 		LeaseIDs: leaseIDs,
 	}
 
-	return c.post(
-		ctx,
-		"/api/v1/agent/heartbeat",
-		reqBody,
-		nil,
-	)
+	var resp HeartbeatResponse
+	if err := c.post(ctx, "/api/v1/agent/heartbeat", reqBody, &resp); err != nil {
+		return HeartbeatResponse{}, err
+	}
+	return resp, nil
 }
 
-// Report tells dns-control whether a lease became active.
-func (c *Client) Report(
-	ctx context.Context,
-	reqBody ReportRequest,
-) error {
-
-	return c.post(
-		ctx,
-		"/api/v1/agent/report",
-		reqBody,
-		nil,
-	)
+func (c *Client) Report(ctx context.Context, reqBody ReportRequest) error {
+	return c.post(ctx, "/api/v1/agent/report", reqBody, nil)
 }
 
-func (c *Client) post(
-	ctx context.Context,
-	path string,
-	body any,
-	result any,
-) error {
-
+func (c *Client) post(ctx context.Context, path string, body any, result any) error {
 	data, err := json.Marshal(body)
 	if err != nil {
-		return fmt.Errorf(
-			"marshal %s: %w",
-			path,
-			err,
-		)
+		return fmt.Errorf("marshal %s: %w", path, err)
 	}
 
 	req, err := http.NewRequestWithContext(
@@ -133,51 +101,27 @@ func (c *Client) post(
 		bytes.NewReader(data),
 	)
 	if err != nil {
-		return fmt.Errorf(
-			"create request %s: %w",
-			path,
-			err,
-		)
+		return fmt.Errorf("create request %s: %w", path, err)
 	}
 
-	req.Header.Set(
-		"Content-Type",
-		"application/json",
-	)
-
+	req.Header.Set("Content-Type", "application/json")
 	c.authorize(req)
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return fmt.Errorf(
-			"request %s: %w",
-			path,
-			err,
-		)
+		return fmt.Errorf("request %s: %w", path, err)
 	}
-
 	defer resp.Body.Close()
 
-	if resp.StatusCode < 200 ||
-		resp.StatusCode >= 300 {
-
-		return fmt.Errorf(
-			"%s returned HTTP %d",
-			path,
-			resp.StatusCode,
-		)
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return fmt.Errorf("%s returned HTTP %d", path, resp.StatusCode)
 	}
 
 	if result != nil {
 		if err := json.NewDecoder(resp.Body).Decode(result); err != nil {
-			return fmt.Errorf(
-				"decode %s response: %w",
-				path,
-				err,
-			)
+			return fmt.Errorf("decode %s response: %w", path, err)
 		}
 	}
-
 	return nil
 }
 
@@ -185,9 +129,5 @@ func (c *Client) authorize(req *http.Request) {
 	if c.token == "" {
 		return
 	}
-
-	req.Header.Set(
-		"Authorization",
-		"Bearer "+c.token,
-	)
+	req.Header.Set("Authorization", "Bearer "+c.token)
 }
