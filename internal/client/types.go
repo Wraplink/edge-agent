@@ -1,5 +1,7 @@
 package client
 
+import "time"
+
 // ---------- Shared ----------
 
 type Capacity struct {
@@ -56,18 +58,30 @@ type Lease struct {
 	Revision uint64 `json:"revision"`
 }
 
+// ---------- Entitlement access grants ----------
+
+type AccessGrant struct {
+	EntitlementID  string    `json:"entitlementId"`
+	SubscriptionID string    `json:"subscriptionId"`
+	ClientIP       string    `json:"clientIp"`
+	ExpiresAt      time.Time `json:"expiresAt"`
+}
+
 // ---------- Heartbeat ----------
 
 type HeartbeatRequest struct {
-	AgentID  string   `json:"agent_id"`
-	LeaseIDs []string `json:"lease_ids"`
+	AgentID             string   `json:"agent_id"`
+	LeaseIDs            []string `json:"lease_ids"`
+	EntitlementRevision uint64   `json:"entitlement_revision"`
 }
 
 type HeartbeatResponse struct {
-	OK              bool     `json:"ok"`
-	Registered      bool     `json:"registered"`
-	Revision        uint64   `json:"revision"`
-	ReleaseLeaseIDs []string `json:"release_lease_ids,omitempty"`
+	OK                  bool          `json:"ok"`
+	Registered          bool          `json:"registered"`
+	Revision            uint64        `json:"revision"`
+	ReleaseLeaseIDs     []string      `json:"release_lease_ids,omitempty"`
+	EntitlementRevision uint64        `json:"entitlement_revision"`
+	Entitlements        []AccessGrant `json:"entitlements,omitempty"`
 }
 
 // ---------- Report ----------
