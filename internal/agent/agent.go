@@ -35,53 +35,29 @@ type Agent struct {
 	active map[string]client.Lease
 }
 
-func New(
-	id string,
-	interval time.Duration,
-	sniCapacity int,
-	routeCapacity int,
-	dnsClient *client.Client,
-	sniAllocator allocator.SNIAllocator,
-	routeAllocator allocator.RouteAllocator,
-	dataplaneManager *dataplane.Manager,
-) *Agent {
+func New(id string, interval time.Duration, sniCapacity, routeCapacity int, dnsClient *client.Client, sniAllocator allocator.SNIAllocator, routeAllocator allocator.RouteAllocator, dataplaneManager *dataplane.Manager) *Agent {
 	return &Agent{
-		id:            id,
-		interval:      interval,
-		sniCapacity:   sniCapacity,
-		routeCapacity: routeCapacity,
-
-		dnsClient: dnsClient,
-
+		id:             id,
+		interval:       interval,
+		sniCapacity:    sniCapacity,
+		routeCapacity:  routeCapacity,
+		dnsClient:      dnsClient,
 		sniAllocator:   sniAllocator,
 		routeAllocator: routeAllocator,
-
-		dataplane: dataplaneManager,
-
-		active: make(map[string]client.Lease),
+		dataplane:      dataplaneManager,
+		active:         make(map[string]client.Lease),
 	}
 }
 
 func (a *Agent) Run(ctx context.Context) error {
-	log.Printf(
-		"agent: starting id=%s interval=%s",
-		a.id,
-		a.interval,
-	)
+	log.Printf("agent: starting id=%s interval=%s", a.id, a.interval)
 
 	if err := a.register(ctx); err != nil {
-		return fmt.Errorf(
-			"register agent: %w",
-			err,
-		)
+		return fmt.Errorf("register agent: %w", err)
 	}
 
-	// Do the first poll immediately.
 	if err := a.cycle(ctx); err != nil {
-		log.Printf(
-			"agent: initial cycle failed: %v",
-			err,
-		)
+		log.Printf("agent: initial cycle failed: %v", err)
 	}
 
 	ticker := time.NewTicker(a.interval)
@@ -91,219 +67,108 @@ func (a *Agent) Run(ctx context.Context) error {
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-
 		case <-ticker.C:
 			if err := a.cycle(ctx); err != nil {
-				log.Printf(
-					"agent: cycle failed: %v",
-					err,
-				)
+				log.Printf("agent: cycle failed: %v", err)
 			}
 		}
 	}
 }
 
-func (a *Agent) register(
-	ctx context.Context,
-) error {
-	return a.dnsClient.Register(
-		ctx,
-		a.id,
-		a.sniCapacity,
-		a.routeCapacity,
-	)
+func (a *Agent) register(ctx context.Context) error {
+	return a.dnsClient.Register(ctx, a.id, a.sniCapacity, a.routeCapacity)
 }
 
-func (a *Agent) cycle(
-	ctx context.Context,
-) error {
-	// Renew existing leases first.
+func (a *Agent) cycle(ctx context.Context) error {
+	// Registration is idempotent. Refresh it every cycle so an agent
+	// automatically recovers when dns-control restarts and loses its
+	// in-memory registry.
+	if err := a.register(ctx); err != nil {
+		return fmt.Errorf("refresh agent registration: %w", err)
+	}
+
+	// Heartbeat is sent even with zero active leases. Idle edges must
+	// remain visible to the control plane as healthy capacity.
 	if err := a.sendHeartbeat(ctx); err != nil {
-		log.Printf(
-			"agent: heartbeat failed: %v",
-			err,
-		)
+		log.Printf("agent: heartbeat failed: %v", err)
 	}
 
 	max := a.availableSlots()
-
 	if max <= 0 {
 		return nil
 	}
 
-	response, err := a.dnsClient.Poll(
-		ctx,
-		a.id,
-		max,
-	)
+	response, err := a.dnsClient.Poll(ctx, a.id, max)
 	if err != nil {
-		return fmt.Errorf(
-			"poll dns-control: %w",
-			err,
-		)
+		return fmt.Errorf("poll dns-control: %w", err)
 	}
-
 	if len(response.Leases) == 0 {
 		return nil
 	}
 
-	log.Printf(
-		"agent: received %d lease(s)",
-		len(response.Leases),
-	)
-
+	log.Printf("agent: received %d lease(s)", len(response.Leases))
 	for _, lease := range response.Leases {
-		if err := a.processLease(
-			ctx,
-			lease,
-		); err != nil {
-			log.Printf(
-				"agent: process lease id=%s domain=%s type=%s: %v",
-				lease.ID,
-				lease.Domain,
-				lease.Type,
-				err,
-			)
-
-			if reportErr := a.reportFailure(
-				ctx,
-				lease,
-			); reportErr != nil {
-				log.Printf(
-					"agent: report failure lease=%s: %v",
-					lease.ID,
-					reportErr,
-				)
+		if err := a.processLease(ctx, lease); err != nil {
+			log.Printf("agent: process lease id=%s domain=%s type=%s: %v", lease.ID, lease.Domain, lease.Type, err)
+			if reportErr := a.reportFailure(ctx, lease); reportErr != nil {
+				log.Printf("agent: report failure lease=%s: %v", lease.ID, reportErr)
 			}
 		}
 	}
-
 	return nil
 }
 
-func (a *Agent) processLease(
-	ctx context.Context,
-	lease client.Lease,
-) error {
+func (a *Agent) processLease(ctx context.Context, lease client.Lease) error {
 	switch lease.Type {
 	case TypeSNI:
-		return a.processSNILease(
-			ctx,
-			lease,
-		)
-
+		return a.processSNILease(ctx, lease)
 	case TypeRoute:
-		return a.processRouteLease(
-			ctx,
-			lease,
-		)
-
+		return a.processRouteLease(ctx, lease)
 	default:
-		return fmt.Errorf(
-			"unsupported lease type %q",
-			lease.Type,
-		)
+		return fmt.Errorf("unsupported lease type %q", lease.Type)
 	}
 }
 
-func (a *Agent) processSNILease(
-	ctx context.Context,
-	lease client.Lease,
-) error {
+func (a *Agent) processSNILease(ctx context.Context, lease client.Lease) error {
 	if a.countActive(TypeSNI) >= a.sniCapacity {
-		return fmt.Errorf(
-			"SNI capacity exhausted",
-		)
+		return fmt.Errorf("SNI capacity exhausted")
 	}
 
-	result, err := a.sniAllocator.Allocate(
-		ctx,
-		lease.Domain,
-	)
+	result, err := a.sniAllocator.Allocate(ctx, lease.Domain)
 	if err != nil {
-		return fmt.Errorf(
-			"allocate SNI: %w",
-			err,
-		)
+		return fmt.Errorf("allocate SNI: %w", err)
 	}
 
-	report := client.ReportRequest{
-		AgentID: a.id,
-		LeaseID: lease.ID,
-		Success: true,
-		Address: result.Address,
-		SNI:     result.SNI,
-	}
-
-	if err := a.dnsClient.Report(
-		ctx,
-		report,
-	); err != nil {
-		if releaseErr := a.sniAllocator.Release(
-			ctx,
-			lease.Domain,
-			result,
-		); releaseErr != nil {
-			log.Printf(
-				"agent: release SNI after report failure domain=%s: %v",
-				lease.Domain,
-				releaseErr,
-			)
+	report := client.ReportRequest{AgentID: a.id, LeaseID: lease.ID, Success: true, Address: result.Address, SNI: result.SNI}
+	if err := a.dnsClient.Report(ctx, report); err != nil {
+		if releaseErr := a.sniAllocator.Release(ctx, lease.Domain, result); releaseErr != nil {
+			log.Printf("agent: release SNI after report failure domain=%s: %v", lease.Domain, releaseErr)
 		}
-
-		return fmt.Errorf(
-			"report SNI allocation: %w",
-			err,
-		)
+		return fmt.Errorf("report SNI allocation: %w", err)
 	}
 
-	// Store the actual allocated values.
 	activeLease := lease
 	activeLease.Address = result.Address
 	activeLease.SNI = result.SNI
-
 	a.mu.Lock()
 	a.active[lease.ID] = activeLease
 	a.mu.Unlock()
 
-	log.Printf(
-		"agent: SNI active domain=%s address=%s sni=%s lease=%s",
-		activeLease.Domain,
-		activeLease.Address,
-		activeLease.SNI,
-		activeLease.ID,
-	)
-
+	log.Printf("agent: SNI active domain=%s address=%s sni=%s lease=%s", activeLease.Domain, activeLease.Address, activeLease.SNI, activeLease.ID)
 	return nil
 }
 
-func (a *Agent) processRouteLease(
-	ctx context.Context,
-	lease client.Lease,
-) error {
+func (a *Agent) processRouteLease(ctx context.Context, lease client.Lease) error {
 	if a.countActive(TypeRoute) >= a.routeCapacity {
-		return fmt.Errorf(
-			"route capacity exhausted",
-		)
+		return fmt.Errorf("route capacity exhausted")
 	}
 
-	result, err := a.routeAllocator.Allocate(
-		ctx,
-		lease.Domain,
-		lease.DestinationIP,
-		lease.Protocol,
-		lease.DestinationPortStart,
-		lease.DestinationPortEnd,
-	)
+	result, err := a.routeAllocator.Allocate(ctx, lease.Domain, lease.DestinationIP, lease.Protocol, lease.DestinationPortStart, lease.DestinationPortEnd)
 	if err != nil {
-		return fmt.Errorf(
-			"allocate route: %w",
-			err,
-		)
+		return fmt.Errorf("allocate route: %w", err)
 	}
 
 	activeLease := lease
-
 	activeLease.Address = result.Address
 	activeLease.RouteID = result.RouteID
 	activeLease.DestinationIP = result.DestinationIP
@@ -311,144 +176,55 @@ func (a *Agent) processRouteLease(
 	activeLease.DestinationPortStart = result.DestinationPortStart
 	activeLease.DestinationPortEnd = result.DestinationPortEnd
 
-	// Apply dataplane before reporting ACTIVE to dns-control.
 	if a.dataplane == nil {
-		_ = a.routeAllocator.Release(
-			ctx,
-			lease.Domain,
-			result,
-		)
-
-		return fmt.Errorf(
-			"dataplane manager is nil",
-		)
+		_ = a.routeAllocator.Release(ctx, lease.Domain, result)
+		return fmt.Errorf("dataplane manager is nil")
 	}
 
-	if err := a.dataplane.Apply(
-		ctx,
-		activeLease,
-	); err != nil {
-		_ = a.routeAllocator.Release(
-			ctx,
-			lease.Domain,
-			result,
-		)
-
-		return fmt.Errorf(
-			"apply route dataplane: %w",
-			err,
-		)
+	if err := a.dataplane.Apply(ctx, activeLease); err != nil {
+		_ = a.routeAllocator.Release(ctx, lease.Domain, result)
+		return fmt.Errorf("apply route dataplane: %w", err)
 	}
 
-	report := client.ReportRequest{
-		AgentID: a.id,
-		LeaseID: lease.ID,
-		Success: true,
-
-		Address: activeLease.Address,
-		RouteID: activeLease.RouteID,
-	}
-
-	if err := a.dnsClient.Report(
-		ctx,
-		report,
-	); err != nil {
-		// dns-control did not accept the allocation.
-		_ = a.dataplane.Remove(
-			ctx,
-			lease.ID,
-		)
-
-		_ = a.routeAllocator.Release(
-			ctx,
-			lease.Domain,
-			result,
-		)
-
-		return fmt.Errorf(
-			"report route allocation: %w",
-			err,
-		)
+	report := client.ReportRequest{AgentID: a.id, LeaseID: lease.ID, Success: true, Address: activeLease.Address, RouteID: activeLease.RouteID}
+	if err := a.dnsClient.Report(ctx, report); err != nil {
+		_ = a.dataplane.Remove(ctx, lease.ID)
+		_ = a.routeAllocator.Release(ctx, lease.Domain, result)
+		return fmt.Errorf("report route allocation: %w", err)
 	}
 
 	a.mu.Lock()
 	a.active[lease.ID] = activeLease
 	a.mu.Unlock()
 
-	log.Printf(
-		"agent: route active domain=%s address=%s destination=%s protocol=%s ports=%s route_id=%s lease=%s",
-		activeLease.Domain,
-		activeLease.Address,
-		activeLease.DestinationIP,
-		activeLease.Protocol,
-		formatPortRange(
-			activeLease.DestinationPortStart,
-			activeLease.DestinationPortEnd,
-		),
-		activeLease.RouteID,
-		activeLease.ID,
-	)
-
+	log.Printf("agent: route active domain=%s address=%s destination=%s protocol=%s ports=%s route_id=%s lease=%s", activeLease.Domain, activeLease.Address, activeLease.DestinationIP, activeLease.Protocol, formatPortRange(activeLease.DestinationPortStart, activeLease.DestinationPortEnd), activeLease.RouteID, activeLease.ID)
 	return nil
 }
 
-func (a *Agent) reportFailure(
-	ctx context.Context,
-	lease client.Lease,
-) error {
-	return a.dnsClient.Report(
-		ctx,
-		client.ReportRequest{
-			AgentID: a.id,
-			LeaseID: lease.ID,
-			Success: false,
-		},
-	)
+func (a *Agent) reportFailure(ctx context.Context, lease client.Lease) error {
+	return a.dnsClient.Report(ctx, client.ReportRequest{AgentID: a.id, LeaseID: lease.ID, Success: false})
 }
 
-func (a *Agent) sendHeartbeat(
-	ctx context.Context,
-) error {
+func (a *Agent) sendHeartbeat(ctx context.Context) error {
 	a.mu.RLock()
-
-	leaseIDs := make(
-		[]string,
-		0,
-		len(a.active),
-	)
-
+	leaseIDs := make([]string, 0, len(a.active))
 	for id := range a.active {
-		leaseIDs = append(
-			leaseIDs,
-			id,
-		)
+		leaseIDs = append(leaseIDs, id)
 	}
-
 	a.mu.RUnlock()
 
-	if len(leaseIDs) == 0 {
-		return nil
-	}
-
-	return a.dnsClient.Heartbeat(
-		ctx,
-		a.id,
-		leaseIDs,
-	)
+	return a.dnsClient.Heartbeat(ctx, a.id, leaseIDs)
 }
 
 func (a *Agent) availableSlots() int {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 
-	sniUsed := 0
-	routeUsed := 0
-
+	sniUsed, routeUsed := 0, 0
 	for _, lease := range a.active {
 		switch lease.Type {
 		case TypeSNI:
 			sniUsed++
-
 		case TypeRoute:
 			routeUsed++
 		}
@@ -456,53 +232,23 @@ func (a *Agent) availableSlots() int {
 
 	sniAvailable := a.sniCapacity - sniUsed
 	routeAvailable := a.routeCapacity - routeUsed
-
-	if sniAvailable < 0 {
-		sniAvailable = 0
-	}
-
-	if routeAvailable < 0 {
-		routeAvailable = 0
-	}
-
+	if sniAvailable < 0 { sniAvailable = 0 }
+	if routeAvailable < 0 { routeAvailable = 0 }
 	return sniAvailable + routeAvailable
 }
 
-func (a *Agent) countActive(
-	leaseType string,
-) int {
+func (a *Agent) countActive(leaseType string) int {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
-
 	count := 0
-
 	for _, lease := range a.active {
-		if lease.Type == leaseType {
-			count++
-		}
+		if lease.Type == leaseType { count++ }
 	}
-
 	return count
 }
 
-func formatPortRange(
-	start uint16,
-	end uint16,
-) string {
-	if start == 0 && end == 0 {
-		return "all"
-	}
-
-	if start == end {
-		return fmt.Sprintf(
-			"%d",
-			start,
-		)
-	}
-
-	return fmt.Sprintf(
-		"%d-%d",
-		start,
-		end,
-	)
+func formatPortRange(start, end uint16) string {
+	if start == 0 && end == 0 { return "all" }
+	if start == end { return fmt.Sprintf("%d", start) }
+	return fmt.Sprintf("%d-%d", start, end)
 }
