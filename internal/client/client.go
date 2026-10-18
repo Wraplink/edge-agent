@@ -60,7 +60,14 @@ func (c *Client) Register(
 		},
 	}
 
-	return c.post(ctx, "/api/v1/agent/register", reqBody, nil)
+	var response RegisterResponse
+	if err := c.post(ctx, "/api/v1/agent/register", reqBody, &response); err != nil {
+		return err
+	}
+	if !response.OK {
+		return fmt.Errorf("dns-control registration did not confirm success: %s", c.baseURL)
+	}
+	return nil
 }
 
 func (c *Client) Poll(
