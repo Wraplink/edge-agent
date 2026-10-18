@@ -1,0 +1,4 @@
+/build/
+/env.local
+/.env.local
+*.test
