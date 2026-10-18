@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log"
+	"net/http"
 	"sync"
 	"time"
 
@@ -76,7 +77,10 @@ func New(
 func (a *Agent) Run(ctx context.Context) error {
 	log.Printf("agent: starting id=%s region=%s interval=%s", a.id, a.region, a.interval)
 
-	if err := a.register(ctx); err != nil {
+	// DNS-control can restart or briefly return 5xx while initializing.
+	// Stay idle and retry transient errors, but fail fast for invalid
+	// credentials or bad configuration (HTTP 4xx except 429).
+	if err := a.registerWithRetry(ctx, 2*time.Second, 30*time.Second); err != nil {
 		return fmt.Errorf("register agent: %w", err)
 	}
 
@@ -107,6 +111,60 @@ func (a *Agent) register(ctx context.Context) error {
 		a.sniCapacity,
 		a.routeCapacity,
 	)
+}
+
+// registerWithRetry does not proceed to polling/allocations until dns-control
+// confirms registration. A persistent 500 keeps the process running and logs
+// the server response so the actual upstream issue can be investigated.
+func (a *Agent) registerWithRetry(ctx context.Context, initialDelay, maxDelay time.Duration) error {
+	if initialDelay <= 0 {
+		initialDelay = 2 * time.Second
+	}
+	if maxDelay < initialDelay {
+		maxDelay = initialDelay
+	}
+
+	delay := initialDelay
+	attempt := 0
+	for {
+		if err := ctx.Err(); err != nil {
+			return err
+		}
+		attempt++
+		err := a.register(ctx)
+		if err == nil {
+			if attempt > 1 {
+				log.Printf("agent: registration recovered after %d attempts", attempt)
+			}
+			return nil
+		}
+
+		var statusErr *client.HTTPStatusError
+		if errors.As(err, &statusErr) {
+			if statusErr.StatusCode != http.StatusTooManyRequests && statusErr.StatusCode < 500 {
+				return fmt.Errorf("permanent registration failure: %w", err)
+			}
+		} else if errors.Is(err, context.Canceled) && ctx.Err() != nil {
+			return ctx.Err()
+		}
+		log.Printf("agent: registration attempt %d failed; retry in %s: %v", attempt, delay, err)
+
+		timer := time.NewTimer(delay)
+		select {
+		case <-ctx.Done():
+			timer.Stop()
+			return ctx.Err()
+		case <-timer.C:
+		}
+
+		if delay < maxDelay {
+			if delay > maxDelay/2 {
+				delay = maxDelay
+			} else {
+				delay *= 2
+			}
+		}
+	}
 }
 
 func (a *Agent) cycle(ctx context.Context) error {

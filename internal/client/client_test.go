@@ -2,6 +2,7 @@ package client
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -32,6 +33,10 @@ func TestRegisterReportsJSONErrorBody(t *testing.T) {
 	if strings.Contains(err.Error(), "example-token") {
 		t.Fatalf("error leaked auth token: %v", err)
 	}
+	var statusErr *HTTPStatusError
+	if !errors.As(err, &statusErr) || statusErr.StatusCode != http.StatusInternalServerError {
+		t.Fatalf("expected typed HTTP 500 for retry decisions, got %T: %v", err, err)
+	}
 }
 
 func TestRegisterReportsPlainTextErrorBody(t *testing.T) {
@@ -57,5 +62,17 @@ func TestRegisterCapsErrorBody(t *testing.T) {
 	err := New(server.URL, "example-token").Register(context.Background(), "edge-01", "eu-1", 50, 10)
 	if err == nil || !strings.Contains(err.Error(), "(truncated)") || len(err.Error()) > 2300 {
 		t.Fatalf("expected bounded response, got %v", err)
+	}
+}
+
+func TestRegisterRequiresAcknowledgement(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = fmt.Fprint(w, `{"ok":false}`)
+	}))
+	defer server.Close()
+	err := New(server.URL, "test-token").Register(context.Background(), "edge-01", "eu-1", 50, 10)
+	if err == nil || !strings.Contains(err.Error(), "did not confirm success") {
+		t.Fatalf("a 200 without ok=true must not count as registered: %v", err)
 	}
 }
