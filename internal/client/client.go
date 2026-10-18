@@ -149,7 +149,7 @@ func (c *Client) post(ctx context.Context, path string, body any, result any) er
 				StatusCode: resp.StatusCode,
 				Path:       path,
 				BaseURL:    c.baseURL,
-				Detail:    fmt.Sprintf("could not read response: %v", readErr),
+				Detail:     fmt.Sprintf("could not read response: %v", readErr),
 			}
 		}
 		truncated := len(data) > maxErrorBytes
