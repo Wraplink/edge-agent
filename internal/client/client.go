@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"strings"
 	"time"
@@ -116,7 +117,32 @@ func (c *Client) post(ctx context.Context, path string, body any, result any) er
 	defer resp.Body.Close()
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return fmt.Errorf("%s returned HTTP %d", path, resp.StatusCode)
+		// Include the server's error text to distinguish dns-control errors
+		// from reverse proxies or unrelated services on the same port.
+		const maxErrorBytes = 2048
+		data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes+1))
+		if readErr != nil {
+			return fmt.Errorf("%s returned HTTP %d (could not read response: %w)", path, resp.StatusCode, readErr)
+		}
+		truncated := len(data) > maxErrorBytes
+		if truncated {
+			data = data[:maxErrorBytes]
+		}
+		detail := strings.TrimSpace(string(data))
+		var serverErr struct {
+			Error string `json:"error"`
+		}
+		if json.Unmarshal(data, &serverErr) == nil && serverErr.Error != "" {
+			detail = serverErr.Error
+		}
+		detail = strings.ReplaceAll(strings.ReplaceAll(detail, "\r", " "), "\n", " ")
+		if truncated {
+			detail += " (truncated)"
+		}
+		if detail == "" {
+			return fmt.Errorf("%s returned HTTP %d from %s", path, resp.StatusCode, c.baseURL)
+		}
+		return fmt.Errorf("%s returned HTTP %d from %s: %s", path, resp.StatusCode, c.baseURL, detail)
 	}
 
 	if result != nil {
