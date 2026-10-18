@@ -13,5 +13,7 @@ services:
       - NET_ADMIN
       - NET_RAW
 
+    env_file:
+      - .env.local
     volumes:
       - ./config.yaml:/etc/edge-agent/config.yaml:ro

@@ -10,12 +10,10 @@ CONFIG="$PROJECT_DIR/config.yaml"
 cd "$PROJECT_DIR"
 
 # Support both local environment file naming conventions.
-if [ -f "$PROJECT_DIR/env.local" ]; then
-    ENV_FILE="$PROJECT_DIR/env.local"
-elif [ -f "$PROJECT_DIR/.env.local" ]; then
+if [ -f "$PROJECT_DIR/.env.local" ]; then
     ENV_FILE="$PROJECT_DIR/.env.local"
 else
-    echo "ERROR: create env.local or .env.local in $PROJECT_DIR"
+    echo "ERROR: create .env.local in $PROJECT_DIR"
     exit 1
 fi
 
