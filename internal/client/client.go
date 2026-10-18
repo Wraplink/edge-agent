@@ -11,6 +11,22 @@ import (
 	"time"
 )
 
+// HTTPStatusError preserves the upstream HTTP status for callers that need
+// to distinguish transient registration failures from permanent errors.
+type HTTPStatusError struct {
+	StatusCode int
+	Path       string
+	BaseURL    string
+	Detail     string
+}
+
+func (e *HTTPStatusError) Error() string {
+	if e.Detail == "" {
+		return fmt.Sprintf("%s returned HTTP %d from %s", e.Path, e.StatusCode, e.BaseURL)
+	}
+	return fmt.Sprintf("%s returned HTTP %d from %s: %s", e.Path, e.StatusCode, e.BaseURL, e.Detail)
+}
+
 type Client struct {
 	baseURL string
 	token   string
@@ -44,7 +60,14 @@ func (c *Client) Register(
 		},
 	}
 
-	return c.post(ctx, "/api/v1/agent/register", reqBody, nil)
+	var response RegisterResponse
+	if err := c.post(ctx, "/api/v1/agent/register", reqBody, &response); err != nil {
+		return err
+	}
+	if !response.OK {
+		return fmt.Errorf("dns-control registration did not confirm success: %s", c.baseURL)
+	}
+	return nil
 }
 
 func (c *Client) Poll(
@@ -122,7 +145,12 @@ func (c *Client) post(ctx context.Context, path string, body any, result any) er
 		const maxErrorBytes = 2048
 		data, readErr := io.ReadAll(io.LimitReader(resp.Body, maxErrorBytes+1))
 		if readErr != nil {
-			return fmt.Errorf("%s returned HTTP %d (could not read response: %w)", path, resp.StatusCode, readErr)
+			return &HTTPStatusError{
+				StatusCode: resp.StatusCode,
+				Path:       path,
+				BaseURL:    c.baseURL,
+				Detail:    fmt.Sprintf("could not read response: %v", readErr),
+			}
 		}
 		truncated := len(data) > maxErrorBytes
 		if truncated {
@@ -139,10 +167,12 @@ func (c *Client) post(ctx context.Context, path string, body any, result any) er
 		if truncated {
 			detail += " (truncated)"
 		}
-		if detail == "" {
-			return fmt.Errorf("%s returned HTTP %d from %s", path, resp.StatusCode, c.baseURL)
+		return &HTTPStatusError{
+			StatusCode: resp.StatusCode,
+			Path:       path,
+			BaseURL:    c.baseURL,
+			Detail:     detail,
 		}
-		return fmt.Errorf("%s returned HTTP %d from %s: %s", path, resp.StatusCode, c.baseURL, detail)
 	}
 
 	if result != nil {
