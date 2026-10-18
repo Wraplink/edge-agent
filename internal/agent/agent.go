@@ -152,9 +152,7 @@ func (a *Agent) registerWithRetry(ctx context.Context, initialDelay, maxDelay ti
 		timer := time.NewTimer(delay)
 		select {
 		case <-ctx.Done():
-			if !timer.Stop() {
-				<-timer.C
-			}
+			timer.Stop()
 			return ctx.Err()
 		case <-timer.C:
 		}
