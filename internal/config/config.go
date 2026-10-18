@@ -3,6 +3,7 @@ package config
 import (
 	"fmt"
 	"os"
+	"sort"
 	"strings"
 	"time"
 
@@ -42,6 +43,22 @@ func Load(filename string) (Config, error) {
 		return Config{}, fmt.Errorf("read config %q: %w", filename, err)
 	}
 
+	// Expand environment placeholders after debug.sh (or the container runtime)
+	// supplies variables. Do not silently use literal ${VAR} strings.
+	missing := make([]string, 0)
+	expanded := os.Expand(string(data), func(key string) string {
+		value, ok := os.LookupEnv(key)
+		if !ok {
+			missing = append(missing, key)
+		}
+		return value
+	})
+	if len(missing) > 0 {
+		sort.Strings(missing)
+		return Config{}, fmt.Errorf("expand config %q: missing environment variables: %s", filename, strings.Join(missing, ", "))
+	}
+	data = []byte(expanded)
+
 	var cfg Config
 	if err := yaml.Unmarshal(data, &cfg); err != nil {
 		return Config{}, fmt.Errorf("parse config %q: %w", filename, err)
@@ -63,6 +80,9 @@ func Load(filename string) (Config, error) {
 func (c Config) Validate() error {
 	if c.DNSControl.URL == "" {
 		return fmt.Errorf("dns_control.url is required")
+	}
+	if strings.TrimSpace(c.DNSControl.Token) == "" {
+		return fmt.Errorf("dns_control.token is required")
 	}
 	if c.Agent.ID == "" {
 		return fmt.Errorf("agent.id is required")
