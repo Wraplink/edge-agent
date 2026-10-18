@@ -4,7 +4,7 @@ set -e
 
 PROJECT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DLV="/home/asgarinia/go/bin/dlv"
-BINARY="$PROJECT_DIR/edge-agent"
+BINARY="$PROJECT_DIR/build/edge-agent"
 
 echo "PROJECT_DIR=$PROJECT_DIR"
 echo "DLV=$DLV"
@@ -32,6 +32,10 @@ echo
 echo "Attach GoLand now."
 echo "Program is paused until debugger continues."
 echo
+
+go build -o build/edge-agent ./cmd/edge-agent
+
+source .env.local
 
 exec sudo "$DLV" exec \
     "$BINARY" \

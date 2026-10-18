@@ -1,6 +1,6 @@
 dns_control:
-  url: "http://127.0.0.1:8080"
-  token: "CHANGE-ME"
+  url: ${DNS_CONTROL_API_URL}
+  token: ${DNS_CONTROL_API_TOKEN}
 
 agent:
   id: "edge-agent-01"
