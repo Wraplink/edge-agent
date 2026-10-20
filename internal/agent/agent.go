@@ -77,6 +77,11 @@ func New(
 func (a *Agent) Run(ctx context.Context) error {
 	log.Printf("agent: starting id=%s region=%s interval=%s", a.id, a.region, a.interval)
 
+	// Deny access until the first authenticated entitlement snapshot arrives.
+	if err := a.replaceEntitlements(ctx, true, 0, nil); err != nil {
+		return fmt.Errorf("initialize fail-closed edge access: %w", err)
+	}
+
 	// DNS-control can restart or briefly return 5xx while initializing.
 	// Stay idle and retry transient errors, but fail fast for invalid
 	// credentials or bad configuration (HTTP 4xx except 429).
@@ -169,8 +174,14 @@ func (a *Agent) registerWithRetry(ctx context.Context, initialDelay, maxDelay ti
 
 func (a *Agent) cycle(ctx context.Context) error {
 	if err := a.sendHeartbeat(ctx); err != nil {
-		log.Printf("agent: heartbeat/reconcile failed: %v", err)
-	}
+        log.Printf("agent: heartbeat/reconcile failed: %v", err)
+        // A disconnected control plane cannot extend stale authorizations.
+        // Clear the kernel allowlist rather than retaining revoked clients.
+        if revokeErr := a.replaceEntitlements(ctx, true, 0, nil); revokeErr != nil {
+            return fmt.Errorf("heartbeat failed: %w; fail-closed revoke failed: %v", err, revokeErr)
+        }
+        return fmt.Errorf("heartbeat failed; access revoked: %w", err)
+    }
 
 	sniAvailable, routeAvailable := a.availableCapacity()
 	if sniAvailable <= 0 && routeAvailable <= 0 {
@@ -345,6 +356,10 @@ func (a *Agent) sendHeartbeat(ctx context.Context) error {
 	}
 
 	var reconcileErrs []error
+
+	if !response.EntitlementEnforced {
+        return fmt.Errorf("dns-control did not enable entitlement enforcement")
+    }
 
 	if a.entitlementSyncRequired(response) {
 		if err := a.replaceEntitlements(
