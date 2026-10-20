@@ -174,14 +174,14 @@ func (a *Agent) registerWithRetry(ctx context.Context, initialDelay, maxDelay ti
 
 func (a *Agent) cycle(ctx context.Context) error {
 	if err := a.sendHeartbeat(ctx); err != nil {
-        log.Printf("agent: heartbeat/reconcile failed: %v", err)
-        // A disconnected control plane cannot extend stale authorizations.
-        // Clear the kernel allowlist rather than retaining revoked clients.
-        if revokeErr := a.replaceEntitlements(ctx, true, 0, nil); revokeErr != nil {
-            return fmt.Errorf("heartbeat failed: %w; fail-closed revoke failed: %v", err, revokeErr)
-        }
-        return fmt.Errorf("heartbeat failed; access revoked: %w", err)
-    }
+		log.Printf("agent: heartbeat/reconcile failed: %v", err)
+		// A disconnected control plane cannot extend stale authorizations.
+		// Clear the kernel allowlist rather than retaining revoked clients.
+		if revokeErr := a.replaceEntitlements(ctx, true, 0, nil); revokeErr != nil {
+			return fmt.Errorf("heartbeat failed: %w; fail-closed revoke failed: %v", err, revokeErr)
+		}
+		return fmt.Errorf("heartbeat failed; access revoked: %w", err)
+	}
 
 	sniAvailable, routeAvailable := a.availableCapacity()
 	if sniAvailable <= 0 && routeAvailable <= 0 {
@@ -358,11 +358,11 @@ func (a *Agent) sendHeartbeat(ctx context.Context) error {
 	var reconcileErrs []error
 
 	if !response.EntitlementEnforced {
-        if err := a.replaceEntitlements(ctx, true, 0, nil); err != nil {
-            return fmt.Errorf("disable unsafe access: %w", err)
-        }
-        return fmt.Errorf("dns-control did not enable entitlement enforcement")
-    }
+		if err := a.replaceEntitlements(ctx, true, 0, nil); err != nil {
+			return fmt.Errorf("disable unsafe access: %w", err)
+		}
+		return fmt.Errorf("dns-control did not enable entitlement enforcement")
+	}
 
 	if a.entitlementSyncRequired(response) {
 		if err := a.replaceEntitlements(
