@@ -61,13 +61,9 @@ func (p *Proxy) Register(domain, destination string) error {
 func (p *Proxy) Remove(domain string) {
 	domain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
 	p.mu.Lock()
+	defer p.mu.Unlock()
 	delete(p.targets, domain)
-	var connections []net.Conn
 	for conn := range p.sessions[domain] {
-		connections = append(connections, conn)
-	}
-	p.mu.Unlock()
-	for _, conn := range connections {
 		_ = conn.Close()
 	}
 }
