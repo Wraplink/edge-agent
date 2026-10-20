@@ -108,6 +108,30 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	if _, err := upstream.Write(hello); err != nil {
 		return
 	}
+	// Recheck authorization during an established session so expiry and
+	// disconnect snapshots terminate traffic without waiting for TCP close.
+	stop := make(chan struct{})
+	defer close(stop)
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-stop:
+				return
+			case <-ctx.Done():
+				_ = raw.Close()
+				_ = upstream.Close()
+				return
+			case <-ticker.C:
+				if !p.Access.Allowed(host) {
+					_ = raw.Close()
+					_ = upstream.Close()
+					return
+				}
+			}
+		}
+	}()
 	done := make(chan struct{})
 	go func() {
 		_, _ = io.Copy(upstream, raw)
