@@ -42,7 +42,7 @@ type EdgeConfig struct {
 type SNIConfig struct {
 	Enabled            bool          `yaml:"enabled"`
 	ListenAddress      string        `yaml:"listen_address"`
-	MaxConnections    int           `yaml:"max_connections"`
+	MaxConnections     int           `yaml:"max_connections"`
 	ClientHelloTimeout time.Duration `yaml:"client_hello_timeout"`
 }
 
