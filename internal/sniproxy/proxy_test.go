@@ -4,7 +4,7 @@ import "testing"
 
 func TestProxyRegisterRequiresExplicitTLSDestination(t *testing.T) {
 	var p Proxy
-	for _, destination := range []string{"", "example.com:443", "192.0.2.5:80", "bad-address"} {
+	for _, destination := range []string{"", "example.com:443", "192.0.2.5:80", "bad-address", "127.0.0.1:443", "0.0.0.0:443", "169.254.1.1:443", "224.0.0.1:443", "[::1]:443"} {
 		if err := p.Register("example.org", destination); err == nil {
 			t.Fatalf("expected destination %q to be rejected", destination)
 		}
