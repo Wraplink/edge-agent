@@ -70,7 +70,11 @@ func main() {
 		if err != nil {
 			log.Fatalf("start SNI listener: %v", err)
 		}
-		proxy := &sniproxy.Proxy{Access: authorizer}
+		proxy := &sniproxy.Proxy{
+			Access:             authorizer,
+			MaxConnections:     cfg.Edge.SNI.MaxConnections,
+			ClientHelloTimeout: cfg.Edge.SNI.ClientHelloTimeout,
+		}
 		service.SetSNIForwarder(proxy)
 		go func() {
 			if err := proxy.Serve(ctx, listener); err != nil {
