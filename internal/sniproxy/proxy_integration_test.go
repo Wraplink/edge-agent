@@ -41,7 +41,7 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 		t.Fatal(err)
 	}
 	proxy := &Proxy{
-		Access: auth,
+		Access:  auth,
 		targets: map[string]string{"game.example": upstream.Addr().String()},
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
