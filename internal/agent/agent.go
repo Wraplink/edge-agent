@@ -38,9 +38,9 @@ type Agent struct {
 
 	dnsClient *client.Client
 
-	sniAllocator   allocator.SNIAllocator
-	routeAllocator allocator.RouteAllocator
-	dataplane      Dataplane
+	sniAllocator        allocator.SNIAllocator
+	routeAllocator      allocator.RouteAllocator
+	dataplane           Dataplane
 	entitlementObserver EntitlementObserver
 
 	mu sync.RWMutex
