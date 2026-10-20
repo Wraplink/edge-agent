@@ -18,6 +18,7 @@ type Proxy struct {
 	DialTimeout time.Duration
 	mu          sync.RWMutex
 	targets     map[string]string
+	sessions    map[string]map[net.Conn]struct{}
 }
 
 func (p *Proxy) Register(domain, destination string) error {
@@ -45,9 +46,17 @@ func (p *Proxy) Register(domain, destination string) error {
 }
 
 func (p *Proxy) Remove(domain string) {
+	domain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
 	p.mu.Lock()
-	delete(p.targets, strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), ".")))
+	delete(p.targets, domain)
+	var connections []net.Conn
+	for conn := range p.sessions[domain] {
+		connections = append(connections, conn)
+	}
 	p.mu.Unlock()
+	for _, conn := range connections {
+		_ = conn.Close()
+	}
 }
 
 func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
@@ -102,6 +111,27 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	if target == "" || !p.Access.Allowed(host) {
 		return
 	}
+	p.mu.Lock()
+	if p.targets[serverName] != target {
+		p.mu.Unlock()
+		return
+	}
+	if p.sessions == nil {
+		p.sessions = make(map[string]map[net.Conn]struct{})
+	}
+	if p.sessions[serverName] == nil {
+		p.sessions[serverName] = make(map[net.Conn]struct{})
+	}
+	p.sessions[serverName][raw] = struct{}{}
+	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		delete(p.sessions[serverName], raw)
+		if len(p.sessions[serverName]) == 0 {
+			delete(p.sessions, serverName)
+		}
+		p.mu.Unlock()
+	}()
 	timeout := p.DialTimeout
 	if timeout <= 0 {
 		timeout = 5 * time.Second
