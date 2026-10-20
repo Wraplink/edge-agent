@@ -2,6 +2,7 @@ package config
 
 import (
 	"fmt"
+	"net"
 	"os"
 	"sort"
 	"strings"
@@ -35,6 +36,12 @@ type CapacityConfig struct {
 
 type EdgeConfig struct {
 	Addresses []string `yaml:"addresses"`
+	SNI       SNIConfig `yaml:"sni"`
+}
+
+type SNIConfig struct {
+	Enabled       bool   `yaml:"enabled"`
+	ListenAddress string `yaml:"listen_address"`
 }
 
 func Load(filename string) (Config, error) {
@@ -67,6 +74,7 @@ func Load(filename string) (Config, error) {
 	cfg.DNSControl.URL = strings.TrimRight(strings.TrimSpace(cfg.DNSControl.URL), "/")
 	cfg.Agent.ID = strings.TrimSpace(cfg.Agent.ID)
 	cfg.Agent.Region = strings.TrimSpace(cfg.Agent.Region)
+	cfg.Edge.SNI.ListenAddress = strings.TrimSpace(cfg.Edge.SNI.ListenAddress)
 	for i := range cfg.Edge.Addresses {
 		cfg.Edge.Addresses[i] = strings.TrimSpace(cfg.Edge.Addresses[i])
 	}
@@ -95,6 +103,14 @@ func (c Config) Validate() error {
 	}
 	if c.Agent.Capacity.SNI == 0 && c.Agent.Capacity.Route == 0 {
 		return fmt.Errorf("at least one agent capacity must be greater than zero")
+	}
+	if c.Edge.SNI.Enabled {
+		if c.Edge.SNI.ListenAddress == "" {
+			return fmt.Errorf("edge.sni.listen_address is required when enabled")
+		}
+		if _, _, err := net.SplitHostPort(c.Edge.SNI.ListenAddress); err != nil {
+			return fmt.Errorf("edge.sni.listen_address: %w", err)
+		}
 	}
 	if len(c.Edge.Addresses) == 0 {
 		return fmt.Errorf("edge.addresses must contain at least one address")
