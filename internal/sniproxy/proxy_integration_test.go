@@ -58,7 +58,7 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 	}
 	defer conn.Close()
 	tlsConn := tls.Client(conn, &tls.Config{
-		ServerName: "game.example",
+		ServerName:         "game.example",
 		InsecureSkipVerify: true, // No TLS server in this forwarding-only test.
 	})
 	_ = tlsConn.SetDeadline(time.Now().Add(3 * time.Second))
