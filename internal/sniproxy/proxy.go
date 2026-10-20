@@ -137,6 +137,7 @@ func clientHelloName(data []byte) (string, bool) {
 type helloReader struct {
 	data []byte
 }
+
 func (r *helloReader) Read(p []byte) (int, error) {
 	if len(r.data) == 0 {
 		return 0, io.EOF
@@ -145,6 +146,7 @@ func (r *helloReader) Read(p []byte) (int, error) {
 	r.data = r.data[n:]
 	return n, nil
 }
+
 func (r *helloReader) Write(p []byte) (int, error) {
 	return len(p), nil
 }
