@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	"net"
 	"sync"
 	"time"
 
@@ -22,6 +23,11 @@ type Dataplane interface {
 	Apply(context.Context, client.Lease) error
 	Remove(context.Context, string) error
 	ReplaceAccessGrants(context.Context, bool, []client.AccessGrant) error
+}
+
+type SNIForwarder interface {
+	Register(domain, destination string) error
+	Remove(domain string)
 }
 
 type EntitlementObserver interface {
@@ -42,6 +48,7 @@ type Agent struct {
 	routeAllocator      allocator.RouteAllocator
 	dataplane           Dataplane
 	entitlementObserver EntitlementObserver
+	sniForwarder        SNIForwarder
 
 	mu sync.RWMutex
 
@@ -77,6 +84,10 @@ func New(
 		active:         make(map[string]client.Lease),
 		entitlements:   make(map[string]client.AccessGrant),
 	}
+}
+
+func (a *Agent) SetSNIForwarder(forwarder SNIForwarder) {
+	a.sniForwarder = forwarder
 }
 
 func (a *Agent) SetEntitlementObserver(observer EntitlementObserver) {
@@ -226,7 +237,10 @@ func (a *Agent) cycle(ctx context.Context) error {
 func (a *Agent) processLease(ctx context.Context, lease client.Lease) error {
 	switch lease.Type {
 	case TypeSNI:
-		return fmt.Errorf("SNI listener and source-IP enforcement are not configured for lease %s", lease.ID)
+		if a.sniForwarder == nil {
+			return fmt.Errorf("SNI listener and source-IP enforcement are not configured for lease %s", lease.ID)
+		}
+		return a.processSNILease(ctx, lease)
 	case TypeRoute:
 		return a.processRouteLease(ctx, lease)
 	default:
@@ -235,6 +249,12 @@ func (a *Agent) processLease(ctx context.Context, lease client.Lease) error {
 }
 
 func (a *Agent) processSNILease(ctx context.Context, lease client.Lease) error {
+	if a.sniForwarder == nil {
+		return fmt.Errorf("SNI forwarding is not configured")
+	}
+	if lease.DestinationIP == "" {
+		return fmt.Errorf("SNI lease %s has no destination IP", lease.ID)
+	}
 	if a.countActive(TypeSNI) >= a.sniCapacity {
 		return fmt.Errorf("SNI capacity exhausted")
 	}
@@ -242,6 +262,11 @@ func (a *Agent) processSNILease(ctx context.Context, lease client.Lease) error {
 	result, err := a.sniAllocator.Allocate(ctx, lease.Domain)
 	if err != nil {
 		return fmt.Errorf("allocate SNI: %w", err)
+	}
+
+	if err := a.sniForwarder.Register(lease.Domain, net.JoinHostPort(lease.DestinationIP, "443")); err != nil {
+		_ = a.sniAllocator.Release(ctx, lease.Domain, result)
+		return fmt.Errorf("register SNI forwarding: %w", err)
 	}
 
 	report := client.ReportRequest{
@@ -252,6 +277,7 @@ func (a *Agent) processSNILease(ctx context.Context, lease client.Lease) error {
 		SNI:     result.SNI,
 	}
 	if err := a.dnsClient.Report(ctx, report); err != nil {
+		a.sniForwarder.Remove(lease.Domain)
 		if releaseErr := a.sniAllocator.Release(ctx, lease.Domain, result); releaseErr != nil {
 			log.Printf("agent: release SNI after report failure domain=%s: %v", lease.Domain, releaseErr)
 		}
@@ -480,6 +506,9 @@ func (a *Agent) releaseLease(ctx context.Context, leaseID string) error {
 
 	switch lease.Type {
 	case TypeSNI:
+		if a.sniForwarder != nil {
+			a.sniForwarder.Remove(lease.Domain)
+		}
 		if err := a.sniAllocator.Release(ctx, lease.Domain, result); err != nil {
 			return err
 		}
