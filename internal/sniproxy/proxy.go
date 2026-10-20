@@ -112,8 +112,12 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	}
 	defer upstream.Close()
 	_ = raw.SetReadDeadline(time.Time{})
-	if _, err := upstream.Write(hello); err != nil {
-		return
+	for len(hello) > 0 {
+		n, err := upstream.Write(hello)
+		if err != nil || n == 0 {
+			return
+		}
+		hello = hello[n:]
 	}
 	// Recheck authorization during an established session so expiry and
 	// disconnect snapshots terminate traffic without waiting for TCP close.
