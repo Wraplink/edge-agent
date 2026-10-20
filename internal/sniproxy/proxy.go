@@ -21,6 +21,7 @@ type Proxy struct {
 	mu                 sync.RWMutex
 	targets            map[string]string
 	sessions           map[string]map[net.Conn]struct{}
+	active             map[net.Conn]struct{}
 }
 
 func (p *Proxy) Register(domain, destination string) error {
@@ -78,6 +79,15 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 	go func() {
 		<-ctx.Done()
 		_ = listener.Close()
+		p.mu.Lock()
+		connections := make([]net.Conn, 0, len(p.active))
+		for conn := range p.active {
+			connections = append(connections, conn)
+		}
+		p.mu.Unlock()
+		for _, conn := range connections {
+			_ = conn.Close()
+		}
 	}()
 	limit := p.MaxConnections
 	if limit <= 0 {
@@ -94,8 +104,19 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 		}
 		select {
 		case slots <- struct{}{}:
+			p.mu.Lock()
+			if p.active == nil {
+				p.active = make(map[net.Conn]struct{})
+			}
+			p.active[conn] = struct{}{}
+			p.mu.Unlock()
 			go func() {
-				defer func() { <-slots }()
+				defer func() {
+					p.mu.Lock()
+					delete(p.active, conn)
+					p.mu.Unlock()
+					<-slots
+				}()
 				p.handle(ctx, conn)
 			}()
 		default:
