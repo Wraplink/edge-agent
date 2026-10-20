@@ -30,8 +30,12 @@ func (p *Proxy) Register(domain, destination string) error {
 	if err != nil {
 		return fmt.Errorf("invalid SNI destination: %w", err)
 	}
-	if net.ParseIP(host) == nil {
+	parsedIP := net.ParseIP(host)
+	if parsedIP == nil {
 		return fmt.Errorf("SNI destination must be an IP literal")
+	}
+	if parsedIP.IsUnspecified() || parsedIP.IsMulticast() || parsedIP.IsLoopback() || parsedIP.IsLinkLocalUnicast() || parsedIP.IsLinkLocalMulticast() {
+		return fmt.Errorf("SNI destination cannot be a loopback, link-local, multicast or unspecified IP")
 	}
 	if port != "443" {
 		return fmt.Errorf("SNI destination must use TLS port 443")
