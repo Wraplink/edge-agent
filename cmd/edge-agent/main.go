@@ -71,13 +71,14 @@ func main() {
 			log.Fatalf("start SNI listener: %v", err)
 		}
 		proxy := &sniproxy.Proxy{Access: authorizer}
+		service.SetSNIForwarder(proxy)
 		go func() {
 			if err := proxy.Serve(ctx, listener); err != nil {
 				log.Printf("SNI listener stopped: %v", err)
 				cancel()
 			}
 		}()
-		log.Printf("SNI test listener started address=%s; lease routing disabled", listener.Addr())
+		log.Printf("SNI listener started address=%s", listener.Addr())
 	}
 
 	if err := service.Run(ctx); err != nil {
