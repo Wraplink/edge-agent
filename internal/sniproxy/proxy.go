@@ -122,7 +122,7 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 		return
 	}
 	p.mu.Lock()
-	if p.targets[serverName] != target {
+	if p.targets[serverName] != target || !p.Access.Allowed(host) {
 		p.mu.Unlock()
 		return
 	}
