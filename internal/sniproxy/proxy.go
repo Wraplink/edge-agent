@@ -97,6 +97,8 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 		limit = 1024
 	}
 	slots := make(chan struct{}, limit)
+	var handlers sync.WaitGroup
+	defer handlers.Wait()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -123,8 +125,10 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 				continue
 			}
 			p.active[conn] = struct{}{}
+			handlers.Add(1)
 			p.mu.Unlock()
 			go func() {
+				defer handlers.Done()
 				defer func() {
 					p.mu.Lock()
 					delete(p.active, conn)
