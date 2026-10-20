@@ -13,6 +13,7 @@ import (
 	"github.com/wraplink/edge-agent/internal/client"
 	"github.com/wraplink/edge-agent/internal/config"
 	"github.com/wraplink/edge-agent/internal/dataplane"
+	"github.com/wraplink/edge-agent/internal/sniproxy"
 )
 
 func main() {
@@ -50,6 +51,10 @@ func main() {
 		routeAllocator,
 		dataplaneManager,
 	)
+
+	// The SNI listener remains disabled until lease routing is fully wired.
+	// Entitlements are synchronized now so the proxy can fail closed.
+	service.SetEntitlementObserver(&sniproxy.Authorizer{})
 
 	ctx, cancel := signal.NotifyContext(
 		context.Background(),
