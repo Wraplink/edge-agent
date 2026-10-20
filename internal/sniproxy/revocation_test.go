@@ -59,3 +59,26 @@ func TestRemoveDoesNotCloseOtherDomains(t *testing.T) {
 		t.Fatal(err)
 	}
 }
+
+func TestRegisterDestinationChangeClosesActiveSessions(t *testing.T) {
+	client, server := net.Pipe()
+	defer client.Close()
+	defer server.Close()
+	proxy := &Proxy{
+		targets: map[string]string{"game.example": "203.0.113.10:443"},
+		sessions: map[string]map[net.Conn]struct{}{
+			"game.example": {server: {}},
+		},
+	}
+	if err := proxy.Register("GAME.EXAMPLE.", "203.0.113.11:443"); err != nil {
+		t.Fatal(err)
+	}
+	if proxy.targets["game.example"] != "203.0.113.11:443" {
+		t.Fatal("route destination was not updated")
+	}
+	_ = client.SetReadDeadline(time.Now().Add(time.Second))
+	var buf [1]byte
+	if _, err := client.Read(buf[:]); err == nil {
+		t.Fatal("expected old destination session to close")
+	}
+}
