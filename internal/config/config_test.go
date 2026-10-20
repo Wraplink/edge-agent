@@ -68,3 +68,20 @@ func TestLoadRejectsEmptyControlToken(t *testing.T) {
 		t.Fatalf("expected missing token error, got %v", err)
 	}
 }
+
+func TestSNIListenerConfiguration(t *testing.T) {
+	t.Setenv("DNS_CONTROL_API_URL", "http://127.0.0.1:8080")
+	t.Setenv("DNS_CONTROL_API_TOKEN", "example-local-token")
+	enabled := testConfig + "  sni:\n    enabled: true\n    listen_address: 127.0.0.1:8443\n"
+	cfg, err := Load(writeTestConfig(t, enabled))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !cfg.Edge.SNI.Enabled || cfg.Edge.SNI.ListenAddress != "127.0.0.1:8443" {
+		t.Fatalf("unexpected SNI config: %+v", cfg.Edge.SNI)
+	}
+	missingAddress := testConfig + "  sni:\n    enabled: true\n"
+	if _, err := Load(writeTestConfig(t, missingAddress)); err == nil {
+		t.Fatal("enabled SNI listener must require listen_address")
+	}
+}
