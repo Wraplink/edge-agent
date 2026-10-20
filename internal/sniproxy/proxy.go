@@ -104,9 +104,20 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 		}
 		select {
 		case slots <- struct{}{}:
+			if ctx.Err() != nil {
+				<-slots
+				_ = conn.Close()
+				continue
+			}
 			p.mu.Lock()
 			if p.active == nil {
 				p.active = make(map[net.Conn]struct{})
+			}
+			if ctx.Err() != nil {
+				p.mu.Unlock()
+				<-slots
+				_ = conn.Close()
+				continue
 			}
 			p.active[conn] = struct{}{}
 			p.mu.Unlock()
