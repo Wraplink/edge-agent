@@ -49,3 +49,24 @@ func TestAuthorizerRejectsExpiredAndDisabledGrants(t *testing.T) {
 		t.Fatal("invalid IPv4 must fail")
 	}
 }
+
+func TestAuthorizerVersionAdvancesOnReplacement(t *testing.T) {
+	var a Authorizer
+	initial := a.Version()
+	if err := a.Replace(true, []client.AccessGrant{{
+		ClientIP: "203.0.113.10",
+		ExpiresAt: time.Now().Add(time.Minute),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	if a.Version() <= initial {
+		t.Fatal("snapshot replacement must advance generation")
+	}
+	previous := a.Version()
+	if err := a.Replace(true, nil); err != nil {
+		t.Fatal(err)
+	}
+	if a.Version() <= previous {
+		t.Fatal("revocation snapshot must advance generation")
+	}
+}
