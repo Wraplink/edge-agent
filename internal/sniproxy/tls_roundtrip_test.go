@@ -67,7 +67,7 @@ func TestTLSRoundTripThroughProxy(t *testing.T) {
 		t.Fatal(err)
 	}
 	defer conn.Close()
-	_ = conn.SetDeadline(time.Now().Add(5*time.Second))
+	_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 	if _, err := conn.Write([]byte("ping")); err != nil {
 		t.Fatal(err)
 	}
