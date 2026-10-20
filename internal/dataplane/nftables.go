@@ -138,6 +138,9 @@ func (n *NFT) AddRoute(
 	n.mu.Lock()
 	defer n.mu.Unlock()
 
+	if !n.accessConfigured || !n.accessEnforced {
+		return fmt.Errorf("route requires active source access enforcement")
+	}
 	if _, exists := n.routes[lease.ID]; exists {
 		return nil
 	}
