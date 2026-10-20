@@ -145,3 +145,15 @@ func TestEntitlementRevisionRequiresResync(t *testing.T) {
 		t.Fatal("enforcement state change must trigger resync")
 	}
 }
+
+func TestSNILeaseCannotActivateWithoutDataplane(t *testing.T) {
+	a := &Agent{}
+	err := a.processLease(context.Background(), client.Lease{
+		ID:     "sni-lease-1",
+		Type:   TypeSNI,
+		Domain: "game.example",
+	})
+	if err == nil {
+		t.Fatal("SNI lease must fail without a configured proxy dataplane")
+	}
+}
