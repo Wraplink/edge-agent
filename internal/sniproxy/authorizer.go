@@ -13,9 +13,9 @@ import (
 // Authorizer maintains the currently valid source IP entitlements.
 // A zero-value Authorizer denies all clients.
 type Authorizer struct {
-	mu sync.RWMutex
+	mu       sync.RWMutex
 	enforced bool
-	grants map[string]time.Time
+	grants   map[string]time.Time
 }
 
 func (a *Authorizer) Replace(enforced bool, grants []client.AccessGrant) error {
