@@ -35,7 +35,7 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 	// Inject a local test destination directly to avoid binding privileged ports.
 	auth := &Authorizer{}
 	if err := auth.Replace(true, []client.AccessGrant{{
-		ClientIP:  "127.0.0.1",
+		ClientIP:   "127.0.0.1",
 		ExpiresAt: time.Now().Add(time.Minute),
 	}}); err != nil {
 		t.Fatal(err)
