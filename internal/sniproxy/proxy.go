@@ -86,9 +86,14 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 		}
 		handlers.Wait()
 	}()
+	stopListener := make(chan struct{})
+	defer close(stopListener)
 	go func() {
-		<-ctx.Done()
-		_ = listener.Close()
+		select {
+		case <-ctx.Done():
+			_ = listener.Close()
+		case <-stopListener:
+		}
 	}()
 	limit := p.MaxConnections
 	if limit <= 0 {
