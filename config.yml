@@ -1,0 +1,20 @@
+dns_control:
+  url: ${DNS_CONTROL_API_URL}
+  token: ${DNS_CONTROL_API_TOKEN}
+
+agent:
+  id: "edge-agent-01"
+  region: "eu-1"
+  interval: 10s
+  capacity:
+    sni: 5000
+    route: 1000
+
+edge:
+  addresses:
+    - "185.80.196.100"
+    - "185.80.196.101"
+    - "185.80.196.102"
+  sni:
+    enabled: false
+    listen_address: "127.0.0.1:8443"
