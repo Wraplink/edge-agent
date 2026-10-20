@@ -87,3 +87,46 @@ func TestListenerRejectsConnectionsAboveLimit(t *testing.T) {
 		t.Fatal("listener did not stop")
 	}
 }
+
+func TestListenerClosesIncompleteClientHelloAfterTimeout(t *testing.T) {
+	auth := &Authorizer{}
+	if err := auth.Replace(true, []client.AccessGrant{{
+		ClientIP:  "127.0.0.1",
+		ExpiresAt: time.Now().Add(time.Minute),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	proxy := &Proxy{Access: auth, ClientHelloTimeout: 100 * time.Millisecond}
+	done := make(chan error, 1)
+	go func() { done <- proxy.Serve(ctx, listener) }()
+	conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte{0x16, 0x03, 0x01}); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(2 * time.Second))
+	var buf [1]byte
+	if _, err := conn.Read(buf[:]); err == nil {
+		t.Fatal("incomplete ClientHello connection should close")
+	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatal("incomplete ClientHello was not closed before deadline")
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("listener did not stop")
+	}
+}
