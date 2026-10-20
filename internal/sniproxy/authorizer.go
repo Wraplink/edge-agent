@@ -16,6 +16,7 @@ type Authorizer struct {
 	mu       sync.RWMutex
 	enforced bool
 	grants   map[string]time.Time
+	version  uint64
 }
 
 func (a *Authorizer) Replace(enforced bool, grants []client.AccessGrant) error {
@@ -33,6 +34,7 @@ func (a *Authorizer) Replace(enforced bool, grants []client.AccessGrant) error {
 	a.mu.Lock()
 	a.enforced = enforced
 	a.grants = next
+	a.version++
 	a.mu.Unlock()
 	return nil
 }
@@ -49,4 +51,10 @@ func (a *Authorizer) Allowed(ip string) bool {
 	}
 	expiry, ok := a.grants[parsed.To4().String()]
 	return ok && time.Now().Before(expiry)
+}
+
+func (a *Authorizer) Version() uint64 {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	return a.version
 }
