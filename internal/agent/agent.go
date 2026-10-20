@@ -358,6 +358,9 @@ func (a *Agent) sendHeartbeat(ctx context.Context) error {
 	var reconcileErrs []error
 
 	if !response.EntitlementEnforced {
+        if err := a.replaceEntitlements(ctx, true, 0, nil); err != nil {
+            return fmt.Errorf("disable unsafe access: %w", err)
+        }
         return fmt.Errorf("dns-control did not enable entitlement enforcement")
     }
 
