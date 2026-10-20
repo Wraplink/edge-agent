@@ -4,6 +4,7 @@ import (
 	"context"
 	"flag"
 	"log"
+	"net"
 	"os"
 	"os/signal"
 	"syscall"
@@ -52,9 +53,10 @@ func main() {
 		dataplaneManager,
 	)
 
-	// The SNI listener remains disabled until lease routing is fully wired.
-	// Entitlements are synchronized now so the proxy can fail closed.
-	service.SetEntitlementObserver(&sniproxy.Authorizer{})
+	// SNI leases are not yet activated, so the listener has no forwarding routes.
+	// An explicit listen address enables isolated listener testing only.
+	authorizer := &sniproxy.Authorizer{}
+	service.SetEntitlementObserver(authorizer)
 
 	ctx, cancel := signal.NotifyContext(
 		context.Background(),
@@ -62,6 +64,21 @@ func main() {
 		syscall.SIGTERM,
 	)
 	defer cancel()
+
+	if address := os.Getenv("EDGE_SNI_LISTEN_ADDR"); address != "" {
+		listener, err := net.Listen("tcp", address)
+		if err != nil {
+			log.Fatalf("start SNI listener: %v", err)
+		}
+		proxy := &sniproxy.Proxy{Access: authorizer}
+		go func() {
+			if err := proxy.Serve(ctx, listener); err != nil {
+				log.Printf("SNI listener stopped: %v", err)
+				cancel()
+			}
+		}()
+		log.Printf("SNI test listener started address=%s; lease routing disabled", listener.Addr())
+	}
 
 	if err := service.Run(ctx); err != nil {
 		if ctx.Err() != nil {
