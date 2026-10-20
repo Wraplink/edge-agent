@@ -18,3 +18,5 @@ edge:
   sni:
     enabled: false
     listen_address: "127.0.0.1:8443"
+    max_connections: 1024
+    client_hello_timeout: 5s
