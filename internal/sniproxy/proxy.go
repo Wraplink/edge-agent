@@ -76,6 +76,7 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 	if p.Access == nil {
 		return fmt.Errorf("SNI authorization is required")
 	}
+	var handlers sync.WaitGroup
 	defer func() {
 		_ = listener.Close()
 		p.mu.Lock()
@@ -87,6 +88,7 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 		for _, conn := range connections {
 			_ = conn.Close()
 		}
+		handlers.Wait()
 	}()
 	go func() {
 		<-ctx.Done()
@@ -97,8 +99,6 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 		limit = 1024
 	}
 	slots := make(chan struct{}, limit)
-	var handlers sync.WaitGroup
-	defer handlers.Wait()
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
