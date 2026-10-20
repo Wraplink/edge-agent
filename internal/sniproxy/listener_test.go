@@ -130,3 +130,48 @@ func TestListenerClosesIncompleteClientHelloAfterTimeout(t *testing.T) {
 		t.Fatal("listener did not stop")
 	}
 }
+
+func TestShutdownClosesPendingClientHello(t *testing.T) {
+	auth := &Authorizer{}
+	if err := auth.Replace(true, []client.AccessGrant{{
+		ClientIP:  "127.0.0.1",
+		ExpiresAt: time.Now().Add(time.Minute),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	proxy := &Proxy{Access: auth, ClientHelloTimeout: time.Minute}
+	done := make(chan error, 1)
+	go func() { done <- proxy.Serve(ctx, listener) }()
+	conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
+	if err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	defer conn.Close()
+	if _, err := conn.Write([]byte{0x16, 0x03, 0x01}); err != nil {
+		cancel()
+		t.Fatal(err)
+	}
+	time.Sleep(50 * time.Millisecond)
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("listener did not stop")
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+	var buf [1]byte
+	if _, err := conn.Read(buf[:]); err == nil {
+		t.Fatal("pending connection should close on shutdown")
+	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatal("pending connection remained open after shutdown")
+	}
+}
