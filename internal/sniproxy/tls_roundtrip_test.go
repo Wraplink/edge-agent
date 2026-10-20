@@ -43,7 +43,9 @@ func TestTLSRoundTripThroughProxy(t *testing.T) {
 		}
 	}()
 	auth := &Authorizer{}
-	if err := auth.Replace(true, []client.AccessGrant{{ClientIP: "127.0.0.1", ExpiresAt: time.Now().Add(time.Minute)}}); err != nil { t.Fatal(err) }
+	if err := auth.Replace(true, []client.AccessGrant{{ClientIP: "127.0.0.1", ExpiresAt: time.Now().Add(time.Minute)}}); err != nil {
+		t.Fatal(err)
+	}
 	proxy := &Proxy{Access: auth, targets: map[string]string{"game.example": upstream.Addr().String()}}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
