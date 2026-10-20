@@ -119,3 +119,29 @@ func TestReplaceEntitlementsAcceptsEmptyRevocationSnapshot(t *testing.T) {
 		t.Fatalf("expected revision 5, got %d", a.entitlementRevision)
 	}
 }
+
+func TestEntitlementRevisionRequiresResync(t *testing.T) {
+	a := &Agent{
+		entitlementConfigured: true,
+		entitlementEnforced:   true,
+		entitlementRevision:   8,
+	}
+	if a.entitlementSyncRequired(client.HeartbeatResponse{
+		EntitlementEnforced: true,
+		EntitlementRevision: 8,
+	}) {
+		t.Fatal("unchanged entitlement revision must not trigger resync")
+	}
+	if !a.entitlementSyncRequired(client.HeartbeatResponse{
+		EntitlementEnforced: true,
+		EntitlementRevision: 9,
+	}) {
+		t.Fatal("new entitlement revision must trigger resync")
+	}
+	if !a.entitlementSyncRequired(client.HeartbeatResponse{
+		EntitlementEnforced: false,
+		EntitlementRevision: 8,
+	}) {
+		t.Fatal("enforcement state change must trigger resync")
+	}
+}
