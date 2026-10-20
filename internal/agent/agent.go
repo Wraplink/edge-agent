@@ -24,6 +24,10 @@ type Dataplane interface {
 	ReplaceAccessGrants(context.Context, bool, []client.AccessGrant) error
 }
 
+type EntitlementObserver interface {
+	Replace(bool, []client.AccessGrant) error
+}
+
 type Agent struct {
 	id       string
 	region   string
@@ -37,6 +41,7 @@ type Agent struct {
 	sniAllocator   allocator.SNIAllocator
 	routeAllocator allocator.RouteAllocator
 	dataplane      Dataplane
+	entitlementObserver EntitlementObserver
 
 	mu sync.RWMutex
 
@@ -72,6 +77,10 @@ func New(
 		active:         make(map[string]client.Lease),
 		entitlements:   make(map[string]client.AccessGrant),
 	}
+}
+
+func (a *Agent) SetEntitlementObserver(observer EntitlementObserver) {
+	a.entitlementObserver = observer
 }
 
 func (a *Agent) Run(ctx context.Context) error {
@@ -413,6 +422,15 @@ func (a *Agent) replaceEntitlements(
 
 	if err := a.dataplane.ReplaceAccessGrants(ctx, enforced, grants); err != nil {
 		return fmt.Errorf("apply entitlement revision %d: %w", revision, err)
+	}
+
+	if a.entitlementObserver != nil {
+		if err := a.entitlementObserver.Replace(enforced, grants); err != nil {
+			// The kernel allowlist is already updated. Revoke it on observer failure.
+			_ = a.dataplane.ReplaceAccessGrants(ctx, true, nil)
+			_ = a.entitlementObserver.Replace(true, nil)
+			return fmt.Errorf("synchronize SNI authorizer: %w", err)
+		}
 	}
 
 	items := make(map[string]client.AccessGrant, len(grants))
