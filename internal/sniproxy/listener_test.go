@@ -256,6 +256,12 @@ func TestConcurrentShutdownClosesPendingClients(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("listener did not stop")
 	}
+	proxy.mu.RLock()
+	remaining := len(proxy.active)
+	proxy.mu.RUnlock()
+	if remaining != 0 {
+		t.Fatalf("expected all handlers to exit, %d connections remain", remaining)
+	}
 	for _, conn := range connections {
 		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 		var buf [1]byte
