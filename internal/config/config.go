@@ -35,7 +35,7 @@ type CapacityConfig struct {
 }
 
 type EdgeConfig struct {
-	Addresses []string `yaml:"addresses"`
+	Addresses []string  `yaml:"addresses"`
 	SNI       SNIConfig `yaml:"sni"`
 }
 
