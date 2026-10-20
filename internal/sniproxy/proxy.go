@@ -145,10 +145,30 @@ func (r *helloReader) Read(p []byte) (int, error) {
 	r.data = r.data[n:]
 	return n, nil
 }
-func (r *helloReader) Write(p []byte) (int, error) { return len(p), nil }
-func (r *helloReader) Close() error { return nil }
-func (r *helloReader) LocalAddr() net.Addr { return &net.TCPAddr{} }
-func (r *helloReader) RemoteAddr() net.Addr { return &net.TCPAddr{} }
-func (r *helloReader) SetDeadline(time.Time) error { return nil }
-func (r *helloReader) SetReadDeadline(time.Time) error { return nil }
-func (r *helloReader) SetWriteDeadline(time.Time) error { return nil }
+func (r *helloReader) Write(p []byte) (int, error) {
+	return len(p), nil
+}
+
+func (r *helloReader) Close() error {
+	return nil
+}
+
+func (r *helloReader) LocalAddr() net.Addr {
+	return &net.TCPAddr{}
+}
+
+func (r *helloReader) RemoteAddr() net.Addr {
+	return &net.TCPAddr{}
+}
+
+func (r *helloReader) SetDeadline(time.Time) error {
+	return nil
+}
+
+func (r *helloReader) SetReadDeadline(time.Time) error {
+	return nil
+}
+
+func (r *helloReader) SetWriteDeadline(time.Time) error {
+	return nil
+}
