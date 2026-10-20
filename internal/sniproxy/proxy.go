@@ -16,6 +16,7 @@ import (
 type Proxy struct {
 	Access      *Authorizer
 	DialTimeout time.Duration
+	MaxConnections int
 	mu          sync.RWMutex
 	targets     map[string]string
 	sessions    map[string]map[net.Conn]struct{}
@@ -77,6 +78,11 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 		<-ctx.Done()
 		_ = listener.Close()
 	}()
+	limit := p.MaxConnections
+	if limit <= 0 {
+		limit = 1024
+	}
+	slots := make(chan struct{}, limit)
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -85,7 +91,15 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 			}
 			return err
 		}
-		go p.handle(ctx, conn)
+		select {
+		case slots <- struct{}{}:
+			go func() {
+				defer func() { <-slots }()
+				p.handle(ctx, conn)
+			}()
+		default:
+			_ = conn.Close()
+		}
 	}
 }
 
