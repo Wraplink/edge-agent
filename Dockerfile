@@ -16,6 +16,6 @@ RUN CGO_ENABLED=0 GOOS=linux GOARCH=amd64 \
 FROM gcr.io/distroless/static-debian12
 
 COPY --from=builder /out/edge-agent /edge-agent
-COPY config.yaml /etc/edge-agent/config.yaml
+COPY config.yml /etc/edge-agent/config.yml
 
-ENTRYPOINT ["/edge-agent", "-config", "/etc/edge-agent/config.yaml"]
+ENTRYPOINT ["/edge-agent", "-config", "/etc/edge-agent/config.yml"]
