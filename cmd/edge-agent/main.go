@@ -18,7 +18,7 @@ import (
 )
 
 func main() {
-	configFile := flag.String("config", "config.yaml", "path to configuration file")
+	configFile := flag.String("config", "config.yml", "path to configuration file")
 	flag.Parse()
 
 	cfg, err := config.Load(*configFile)
@@ -53,8 +53,7 @@ func main() {
 		dataplaneManager,
 	)
 
-	// SNI leases are not yet activated, so the listener has no forwarding routes.
-	// An explicit listen address enables isolated listener testing only.
+	// SNI listener configuration is loaded exclusively from config.yml.
 	authorizer := &sniproxy.Authorizer{}
 	service.SetEntitlementObserver(authorizer)
 
@@ -65,7 +64,8 @@ func main() {
 	)
 	defer cancel()
 
-	if address := os.Getenv("EDGE_SNI_LISTEN_ADDR"); address != "" {
+	if cfg.Edge.SNI.Enabled {
+		address := cfg.Edge.SNI.ListenAddress
 		listener, err := net.Listen("tcp", address)
 		if err != nil {
 			log.Fatalf("start SNI listener: %v", err)
