@@ -54,7 +54,7 @@ func TestAuthorizerVersionAdvancesOnReplacement(t *testing.T) {
 	var a Authorizer
 	initial := a.Version()
 	if err := a.Replace(true, []client.AccessGrant{{
-		ClientIP: "203.0.113.10",
+		ClientIP:  "203.0.113.10",
 		ExpiresAt: time.Now().Add(time.Minute),
 	}}); err != nil {
 		t.Fatal(err)
