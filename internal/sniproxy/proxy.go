@@ -135,7 +135,10 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 				_ = upstream.Close()
 				return
 			case <-ticker.C:
-				if !p.Access.Allowed(host) {
+				p.mu.RLock()
+				currentTarget := p.targets[serverName]
+				p.mu.RUnlock()
+				if !p.Access.Allowed(host) || currentTarget != target {
 					_ = raw.Close()
 					_ = upstream.Close()
 					return
