@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"net"
 	"sync"
+	"time"
 
 	"github.com/google/nftables"
 	"github.com/google/nftables/binaryutil"
@@ -96,6 +97,9 @@ func (n *NFT) ReplaceAllowedSources(
 		ip := parsed.To4()
 		if ip == nil {
 			return fmt.Errorf("invalid entitled client IPv4 %q", grant.ClientIP)
+		}
+		if !grant.ExpiresAt.After(time.Now().UTC()) {
+			continue
 		}
 		key := ip.String()
 		if _, exists := seen[key]; exists {
