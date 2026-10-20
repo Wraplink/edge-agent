@@ -25,8 +25,15 @@ func (p *Proxy) Register(domain, destination string) error {
 	if domain == "" || destination == "" {
 		return fmt.Errorf("SNI domain and destination are required")
 	}
-	if _, _, err := net.SplitHostPort(destination); err != nil {
+	host, port, err := net.SplitHostPort(destination)
+	if err != nil {
 		return fmt.Errorf("invalid SNI destination: %w", err)
+	}
+	if net.ParseIP(host) == nil {
+		return fmt.Errorf("SNI destination must be an IP literal")
+	}
+	if port != "443" {
+		return fmt.Errorf("SNI destination must use TLS port 443")
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
