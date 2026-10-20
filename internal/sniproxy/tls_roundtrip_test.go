@@ -20,7 +20,12 @@ func TestTLSRoundTripThroughProxy(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	template := &x509.Certificate{SerialNumber: big.NewInt(1), DNSNames: []string{"game.example"}, NotBefore: time.Now().Add(-time.Minute), NotAfter: time.Now().Add(time.Hour)}
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		DNSNames:     []string{"game.example"},
+		NotBefore:    time.Now().Add(-time.Minute),
+		NotAfter:     time.Now().Add(time.Hour),
+	}
 	der, err := x509.CreateCertificate(rand.Reader, template, template, &key.PublicKey, key)
 	if err != nil {
 		t.Fatal(err)
@@ -36,14 +41,17 @@ func TestTLSRoundTripThroughProxy(t *testing.T) {
 			return
 		}
 		defer conn.Close()
-		_ = conn.SetDeadline(time.Now().Add(5*time.Second))
+		_ = conn.SetDeadline(time.Now().Add(5 * time.Second))
 		var buf [4]byte
 		if _, err := io.ReadFull(conn, buf[:]); err == nil && string(buf[:]) == "ping" {
 			_, _ = conn.Write([]byte("pong"))
 		}
 	}()
 	auth := &Authorizer{}
-	if err := auth.Replace(true, []client.AccessGrant{{ClientIP: "127.0.0.1", ExpiresAt: time.Now().Add(time.Minute)}}); err != nil {
+	if err := auth.Replace(true, []client.AccessGrant{{
+		ClientIP:  "127.0.0.1",
+		ExpiresAt: time.Now().Add(time.Minute),
+	}}); err != nil {
 		t.Fatal(err)
 	}
 	proxy := &Proxy{Access: auth, targets: map[string]string{"game.example": upstream.Addr().String()}}
@@ -54,7 +62,7 @@ func TestTLSRoundTripThroughProxy(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	go func() { _ = proxy.Serve(ctx, listener) }()
-	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5*time.Second}, "tcp", listener.Addr().String(), &tls.Config{ServerName: "game.example", InsecureSkipVerify: true})
+	conn, err := tls.DialWithDialer(&net.Dialer{Timeout: 5 * time.Second}, "tcp", listener.Addr().String(), &tls.Config{ServerName: "game.example", InsecureSkipVerify: true})
 	if err != nil {
 		t.Fatal(err)
 	}
