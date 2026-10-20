@@ -76,8 +76,7 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 	if p.Access == nil {
 		return fmt.Errorf("SNI authorization is required")
 	}
-	go func() {
-		<-ctx.Done()
+	defer func() {
 		_ = listener.Close()
 		p.mu.Lock()
 		connections := make([]net.Conn, 0, len(p.active))
@@ -88,6 +87,10 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 		for _, conn := range connections {
 			_ = conn.Close()
 		}
+	}()
+	go func() {
+		<-ctx.Done()
+		_ = listener.Close()
 	}()
 	limit := p.MaxConnections
 	if limit <= 0 {
