@@ -89,7 +89,11 @@ func (n *NFT) ReplaceAllowedSources(
 	elements := make([]nftables.SetElement, 0, len(grants))
 	seen := make(map[string]struct{}, len(grants))
 	for _, grant := range grants {
-		ip := net.ParseIP(grant.ClientIP).To4()
+		parsed := net.ParseIP(grant.ClientIP)
+		if parsed == nil {
+			return fmt.Errorf("invalid entitled client IPv4 %q", grant.ClientIP)
+		}
+		ip := parsed.To4()
 		if ip == nil {
 			return fmt.Errorf("invalid entitled client IPv4 %q", grant.ClientIP)
 		}
