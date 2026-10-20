@@ -217,7 +217,7 @@ func (a *Agent) cycle(ctx context.Context) error {
 func (a *Agent) processLease(ctx context.Context, lease client.Lease) error {
 	switch lease.Type {
 	case TypeSNI:
-		return a.processSNILease(ctx, lease)
+		return fmt.Errorf("SNI listener and source-IP enforcement are not configured for lease %s", lease.ID)
 	case TypeRoute:
 		return a.processRouteLease(ctx, lease)
 	default:
