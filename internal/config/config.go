@@ -40,8 +40,10 @@ type EdgeConfig struct {
 }
 
 type SNIConfig struct {
-	Enabled       bool   `yaml:"enabled"`
-	ListenAddress string `yaml:"listen_address"`
+	Enabled            bool          `yaml:"enabled"`
+	ListenAddress      string        `yaml:"listen_address"`
+	MaxConnections    int           `yaml:"max_connections"`
+	ClientHelloTimeout time.Duration `yaml:"client_hello_timeout"`
 }
 
 func Load(filename string) (Config, error) {
@@ -103,6 +105,12 @@ func (c Config) Validate() error {
 	}
 	if c.Agent.Capacity.SNI == 0 && c.Agent.Capacity.Route == 0 {
 		return fmt.Errorf("at least one agent capacity must be greater than zero")
+	}
+	if c.Edge.SNI.MaxConnections < 0 {
+		return fmt.Errorf("edge.sni.max_connections cannot be negative")
+	}
+	if c.Edge.SNI.ClientHelloTimeout < 0 {
+		return fmt.Errorf("edge.sni.client_hello_timeout cannot be negative")
 	}
 	if c.Edge.SNI.Enabled {
 		if c.Edge.SNI.ListenAddress == "" {
