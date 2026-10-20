@@ -78,4 +78,14 @@ func TestTLSRoundTripThroughProxy(t *testing.T) {
 	if string(response[:]) != "pong" {
 		t.Fatalf("unexpected response %q", response)
 	}
+	if err := auth.Replace(true, nil); err != nil {
+		t.Fatal(err)
+	}
+	_ = conn.SetReadDeadline(time.Now().Add(3 * time.Second))
+	var revoked [1]byte
+	if _, err := conn.Read(revoked[:]); err == nil {
+		t.Fatal("revoked client connection remained open")
+	} else if timeout, ok := err.(net.Error); ok && timeout.Timeout() {
+		t.Fatal("revoked client connection was not closed before deadline")
+	}
 }
