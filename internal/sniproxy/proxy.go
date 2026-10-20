@@ -14,10 +14,10 @@ import (
 // Proxy forwards TLS streams based on the client's SNI without decrypting TLS.
 // Only explicitly registered destinations are routable.
 type Proxy struct {
-	Access *Authorizer
+	Access      *Authorizer
 	DialTimeout time.Duration
-	mu sync.RWMutex
-	targets map[string]string
+	mu          sync.RWMutex
+	targets     map[string]string
 }
 
 func (p *Proxy) Register(domain, destination string) error {
