@@ -41,7 +41,13 @@ func (p *Proxy) Register(domain, destination string) error {
 	if p.targets == nil {
 		p.targets = make(map[string]string)
 	}
+	previous := p.targets[domain]
 	p.targets[domain] = destination
+	if previous != "" && previous != destination {
+		for conn := range p.sessions[domain] {
+			_ = conn.Close()
+		}
+	}
 	return nil
 }
 
