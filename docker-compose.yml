@@ -16,4 +16,4 @@ services:
     env_file:
       - .env.local
     volumes:
-      - ./config.yaml:/etc/edge-agent/config.yaml:ro
+      - ./config.yml:/etc/edge-agent/config.yml:ro
