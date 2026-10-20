@@ -175,3 +175,49 @@ func TestShutdownClosesPendingClientHello(t *testing.T) {
 		t.Fatal("pending connection remained open after shutdown")
 	}
 }
+
+func TestListenerReleasesCapacityAfterClientHelloTimeout(t *testing.T) {
+	auth := &Authorizer{}
+	if err := auth.Replace(true, []client.AccessGrant{{
+		ClientIP:  "127.0.0.1",
+		ExpiresAt: time.Now().Add(time.Minute),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	proxy := &Proxy{Access: auth, MaxConnections: 1, ClientHelloTimeout: 50 * time.Millisecond}
+	done := make(chan error, 1)
+	go func() { done <- proxy.Serve(ctx, listener) }()
+	for i := 0; i < 5; i++ {
+		conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
+		if err != nil {
+			t.Fatal(err)
+		}
+		if _, err := conn.Write([]byte{0x16, 0x03, 0x01}); err != nil {
+			conn.Close()
+			t.Fatal(err)
+		}
+		_ = conn.SetReadDeadline(time.Now().Add(time.Second))
+		var buf [1]byte
+		if _, err := conn.Read(buf[:]); err == nil {
+			conn.Close()
+			t.Fatal("expected incomplete handshake to close")
+		}
+		conn.Close()
+		time.Sleep(20 * time.Millisecond)
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("listener did not stop")
+	}
+}
