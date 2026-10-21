@@ -334,3 +334,19 @@ func TestFailedUpstreamDialReleasesConnectionSlot(t *testing.T) {
 		t.Fatal("proxy did not stop")
 	}
 }
+
+func TestListenerAlreadyCancelledDoesNotAcceptConnections(t *testing.T) {
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+	proxy := &Proxy{Access: &Authorizer{}}
+	if err := proxy.Serve(ctx, listener); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := net.DialTimeout("tcp", listener.Addr().String(), 100*time.Millisecond); err == nil {
+		t.Fatal("cancelled proxy left listener open")
+	}
+}
