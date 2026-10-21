@@ -171,3 +171,36 @@ func routeKey(
 		destinationPortEnd,
 	)
 }
+
+// AllocateAssigned uses a control-plane selected edge IPv4 instead of hashing.
+// The address must belong to this agent's configured public IPv4 inventory.
+func (a *Route) AllocateAssigned(
+	ctx context.Context, domain, destinationIP, protocol string,
+	start, end uint16, assignedIP string,
+) (Result, error) {
+	assigned := net.ParseIP(strings.TrimSpace(assignedIP))
+	if assigned == nil || assigned.To4() == nil {
+		return Result{}, fmt.Errorf("invalid assigned edge IPv4 %q", assignedIP)
+	}
+	assignedIP = assigned.To4().String()
+	allowed := false
+	for _, address := range a.addresses {
+		if address == assignedIP {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return Result{}, fmt.Errorf("assigned edge IPv4 %s is not configured on this agent", assignedIP)
+	}
+	result, err := a.Allocate(ctx, domain, destinationIP, protocol, start, end)
+	if err != nil {
+		return Result{}, err
+	}
+	key := routeKey(normalize(domain), strings.TrimSpace(destinationIP), strings.ToLower(strings.TrimSpace(protocol)), start, end)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	result.Address = assignedIP
+	a.assigned[key] = result
+	return result, nil
+}
