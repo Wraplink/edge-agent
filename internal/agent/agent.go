@@ -307,14 +307,19 @@ func (a *Agent) processRouteLease(ctx context.Context, lease client.Lease) error
 		return fmt.Errorf("route capacity exhausted")
 	}
 
-	result, err := a.routeAllocator.Allocate(
-		ctx,
-		lease.Domain,
-		lease.DestinationIP,
-		lease.Protocol,
-		lease.DestinationPortStart,
-		lease.DestinationPortEnd,
-	)
+	var result allocator.Result
+	var err error
+	if lease.Address != "" {
+		assigned, ok := a.routeAllocator.(interface {
+			AllocateAssigned(context.Context, string, string, string, uint16, uint16, string) (allocator.Result, error)
+		})
+		if !ok {
+			return fmt.Errorf("route allocator cannot honor assigned edge address %s", lease.Address)
+		}
+		result, err = assigned.AllocateAssigned(ctx, lease.Domain, lease.DestinationIP, lease.Protocol, lease.DestinationPortStart, lease.DestinationPortEnd, lease.Address)
+	} else {
+		result, err = a.routeAllocator.Allocate(ctx, lease.Domain, lease.DestinationIP, lease.Protocol, lease.DestinationPortStart, lease.DestinationPortEnd)
+	}
 	if err != nil {
 		return fmt.Errorf("allocate route: %w", err)
 	}
