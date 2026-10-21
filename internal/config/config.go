@@ -112,6 +112,12 @@ func (c Config) Validate() error {
 	if c.Edge.SNI.ClientHelloTimeout < 0 {
 		return fmt.Errorf("edge.sni.client_hello_timeout cannot be negative")
 	}
+	if c.Edge.SNI.Enabled && c.Edge.SNI.MaxConnections == 0 {
+		return fmt.Errorf("edge.sni.max_connections must be greater than zero when enabled")
+	}
+	if c.Edge.SNI.Enabled && c.Edge.SNI.ClientHelloTimeout == 0 {
+		return fmt.Errorf("edge.sni.client_hello_timeout must be greater than zero when enabled")
+	}
 	if c.Edge.SNI.Enabled {
 		if c.Edge.SNI.ListenAddress == "" {
 			return fmt.Errorf("edge.sni.listen_address is required when enabled")
