@@ -37,7 +37,7 @@ type NFT struct {
 
 type routeState struct {
 	lease client.Lease
-	rule  *nftables.Rule
+	rules []*nftables.Rule
 }
 
 func NewNFT() (*NFT, error) {
@@ -163,126 +163,133 @@ func (n *NFT) AddRoute(
 		return fmt.Errorf("invalid destination IPv4 address %q", lease.DestinationIP)
 	}
 
-	protocol, err := protocolNumber(lease.Protocol)
-	if err != nil {
-		return err
+	protocols := []string{lease.Protocol}
+	if lease.Protocol == "tcp_udp" {
+		protocols = []string{"tcp", "udp"}
 	}
 
 	portStart, portEnd := destinationPortRange(lease)
+	var rules []*nftables.Rule
+	for _, protocolName := range protocols {
+		protocol, err := protocolNumber(protocolName)
+		if err != nil {
+			return err
+		}
+		exprs := make([]expr.Any, 0, 16)
+		if n.accessEnforced {
+			exprs = append(exprs,
+				// IPv4 source address is at offset 12 in the network header.
+				&expr.Payload{
+					DestRegister: 1,
+					Base:         expr.PayloadBaseNetworkHeader,
+					Offset:       12,
+					Len:          4,
+				},
+				&expr.Lookup{
+					SourceRegister: 1,
+					SetName:        n.entitledSet.Name,
+					SetID:          n.entitledSet.ID,
+				},
+			)
+		}
 
-	exprs := make([]expr.Any, 0, 16)
-	if n.accessEnforced {
 		exprs = append(exprs,
-			// IPv4 source address is at offset 12 in the network header.
 			&expr.Payload{
 				DestRegister: 1,
 				Base:         expr.PayloadBaseNetworkHeader,
-				Offset:       12,
+				Offset:       16,
 				Len:          4,
 			},
-			&expr.Lookup{
-				SourceRegister: 1,
-				SetName:        n.entitledSet.Name,
-				SetID:          n.entitledSet.ID,
+			&expr.Cmp{
+				Op:       expr.CmpOpEq,
+				Register: 1,
+				Data:     edgeIP,
 			},
-		)
-	}
-
-	exprs = append(exprs,
-		&expr.Payload{
-			DestRegister: 1,
-			Base:         expr.PayloadBaseNetworkHeader,
-			Offset:       16,
-			Len:          4,
-		},
-		&expr.Cmp{
-			Op:       expr.CmpOpEq,
-			Register: 1,
-			Data:     edgeIP,
-		},
-		&expr.Meta{
-			Key:      expr.MetaKeyL4PROTO,
-			Register: 1,
-		},
-		&expr.Cmp{
-			Op:       expr.CmpOpEq,
-			Register: 1,
-			Data:     []byte{protocol},
-		},
-	)
-
-	if portStart != 0 || portEnd != 0 {
-		exprs = append(exprs,
-			&expr.Payload{
-				DestRegister: 1,
-				Base:         expr.PayloadBaseTransportHeader,
-				Offset:       2,
-				Len:          2,
+			&expr.Meta{
+				Key:      expr.MetaKeyL4PROTO,
+				Register: 1,
 			},
 			&expr.Cmp{
-				Op:       expr.CmpOpGte,
+				Op:       expr.CmpOpEq,
 				Register: 1,
-				Data:     binaryutil.BigEndian.PutUint16(portStart),
-			},
-			&expr.Cmp{
-				Op:       expr.CmpOpLte,
-				Register: 1,
-				Data:     binaryutil.BigEndian.PutUint16(portEnd),
+				Data:     []byte{protocol},
 			},
 		)
-	}
 
-	exprs = append(exprs,
-		&expr.Immediate{
-			Register: 1,
-			Data:     destinationIP,
-		},
-	)
-
-	if portStart != 0 || portEnd != 0 {
-		exprs = append(exprs,
-			&expr.Immediate{
-				Register: 2,
-				Data:     binaryutil.BigEndian.PutUint16(portStart),
-			},
-		)
-	}
-
-	nat := &expr.NAT{
-		Type:       expr.NATTypeDestNAT,
-		Family:     uint32(nftables.TableFamilyIPv4),
-		RegAddrMin: 1,
-	}
-
-	if portStart != 0 || portEnd != 0 {
-		nat.RegProtoMin = 2
-		if portEnd != portStart {
+		if portStart != 0 || portEnd != 0 {
 			exprs = append(exprs,
-				&expr.Immediate{
-					Register: 3,
+				&expr.Payload{
+					DestRegister: 1,
+					Base:         expr.PayloadBaseTransportHeader,
+					Offset:       2,
+					Len:          2,
+				},
+				&expr.Cmp{
+					Op:       expr.CmpOpGte,
+					Register: 1,
+					Data:     binaryutil.BigEndian.PutUint16(portStart),
+				},
+				&expr.Cmp{
+					Op:       expr.CmpOpLte,
+					Register: 1,
 					Data:     binaryutil.BigEndian.PutUint16(portEnd),
 				},
 			)
-			nat.RegProtoMax = 3
 		}
+
+		exprs = append(exprs,
+			&expr.Immediate{
+				Register: 1,
+				Data:     destinationIP,
+			},
+		)
+
+		if portStart != 0 || portEnd != 0 {
+			exprs = append(exprs,
+				&expr.Immediate{
+					Register: 2,
+					Data:     binaryutil.BigEndian.PutUint16(portStart),
+				},
+			)
+		}
+
+		nat := &expr.NAT{
+			Type:       expr.NATTypeDestNAT,
+			Family:     uint32(nftables.TableFamilyIPv4),
+			RegAddrMin: 1,
+		}
+
+		if portStart != 0 || portEnd != 0 {
+			nat.RegProtoMin = 2
+			if portEnd != portStart {
+				exprs = append(exprs,
+					&expr.Immediate{
+						Register: 3,
+						Data:     binaryutil.BigEndian.PutUint16(portEnd),
+					},
+				)
+				nat.RegProtoMax = 3
+			}
+		}
+
+		exprs = append(exprs, nat)
+
+		rule := &nftables.Rule{
+			Table: n.table,
+			Chain: n.chain,
+			Exprs: exprs,
+		}
+
+		n.conn.AddRule(rule)
+		rules = append(rules, rule)
 	}
-
-	exprs = append(exprs, nat)
-
-	rule := &nftables.Rule{
-		Table: n.table,
-		Chain: n.chain,
-		Exprs: exprs,
-	}
-
-	n.conn.AddRule(rule)
 	if err := n.conn.Flush(); err != nil {
 		return fmt.Errorf("add route %s: %w", lease.ID, err)
 	}
 
 	n.routes[lease.ID] = &routeState{
 		lease: lease,
-		rule:  rule,
+		rules: rules,
 	}
 	return nil
 }
@@ -303,13 +310,13 @@ func (n *NFT) RemoveRoute(
 		return nil
 	}
 
-	if state.rule == nil || state.rule.Handle == 0 {
-		delete(n.routes, lease.ID)
-		return nil
-	}
-
-	if err := n.conn.DelRule(state.rule); err != nil {
-		return fmt.Errorf("delete route %s: %w", lease.ID, err)
+	for _, rule := range state.rules {
+		if rule == nil || rule.Handle == 0 {
+			return fmt.Errorf("route %s has no rule handle", lease.ID)
+		}
+		if err := n.conn.DelRule(rule); err != nil {
+			return fmt.Errorf("delete route %s: %w", lease.ID, err)
+		}
 	}
 
 	if err := n.conn.Flush(); err != nil {
@@ -346,7 +353,7 @@ func validateLease(lease client.Lease) error {
 	}
 
 	switch lease.Protocol {
-	case "tcp", "udp":
+	case "tcp", "udp", "tcp_udp":
 	default:
 		return fmt.Errorf("unsupported protocol %q", lease.Protocol)
 	}

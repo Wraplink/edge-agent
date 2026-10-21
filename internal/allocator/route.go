@@ -59,7 +59,7 @@ func (a *Route) Allocate(
 	}
 
 	switch protocol {
-	case "tcp", "udp":
+	case "tcp", "udp", "tcp_udp":
 	default:
 		return Result{}, fmt.Errorf(
 			"unsupported protocol %q",

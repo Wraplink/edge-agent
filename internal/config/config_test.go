@@ -91,9 +91,9 @@ func TestSNIEnabledRequiresPositiveLimits(t *testing.T) {
 	t.Setenv("DNS_CONTROL_API_TOKEN", "example-local-token")
 	base := testConfig + "  sni:\n    enabled: true\n    listen_address: 127.0.0.1:8443\n"
 	cases := []struct {
-		name string
+		name  string
 		extra string
-		want string
+		want  string
 	}{
 		{"missing connections", "    client_hello_timeout: 5s\n", "edge.sni.max_connections"},
 		{"negative connections", "    max_connections: -1\n    client_hello_timeout: 5s\n", "edge.sni.max_connections"},
