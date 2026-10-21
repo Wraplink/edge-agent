@@ -347,6 +347,7 @@ func (a *Agent) processRouteLease(ctx context.Context, lease client.Lease) error
 		Success: true,
 		Address: activeLease.Address,
 		RouteID: activeLease.RouteID,
+		Generation: lease.Generation,
 	}
 	if err := a.dnsClient.Report(ctx, report); err != nil {
 		_ = a.dataplane.Remove(ctx, lease.ID)
