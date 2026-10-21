@@ -45,9 +45,10 @@ type Lease struct {
 	AgentID   string `json:"agent_id,omitempty"`
 	ExpiresAt string `json:"expires_at,omitempty"`
 
-	Address string `json:"address,omitempty"`
-	SNI     string `json:"sni,omitempty"`
-	RouteID string `json:"route_id,omitempty"`
+	Address    string `json:"address,omitempty"`
+	SNI        string `json:"sni,omitempty"`
+	RouteID    string `json:"route_id,omitempty"`
+	Generation int64  `json:"generation,omitempty"`
 
 	DestinationIP string `json:"destination_ip,omitempty"`
 	Protocol      string `json:"protocol,omitempty"`
@@ -92,9 +93,10 @@ type ReportRequest struct {
 	LeaseID string `json:"lease_id"`
 	Success bool   `json:"success"`
 
-	Address string `json:"address,omitempty"`
-	SNI     string `json:"sni,omitempty"`
-	RouteID string `json:"route_id,omitempty"`
+	Address    string `json:"address,omitempty"`
+	SNI        string `json:"sni,omitempty"`
+	RouteID    string `json:"route_id,omitempty"`
+	Generation int64  `json:"generation,omitempty"`
 
 	DestinationIP string `json:"destination_ip,omitempty"`
 	Protocol      string `json:"protocol,omitempty"`
