@@ -72,7 +72,7 @@ func TestLoadRejectsEmptyControlToken(t *testing.T) {
 func TestSNIListenerConfiguration(t *testing.T) {
 	t.Setenv("DNS_CONTROL_API_URL", "http://127.0.0.1:8080")
 	t.Setenv("DNS_CONTROL_API_TOKEN", "example-local-token")
-	enabled := testConfig + "  sni:\n    enabled: true\n    listen_address: 127.0.0.1:8443\n"
+	enabled := testConfig + "  sni:\n    enabled: true\n    listen_address: 127.0.0.1:8443\n    max_connections: 1024\n    client_hello_timeout: 5s\n"
 	cfg, err := Load(writeTestConfig(t, enabled))
 	if err != nil {
 		t.Fatal(err)
@@ -83,5 +83,29 @@ func TestSNIListenerConfiguration(t *testing.T) {
 	missingAddress := testConfig + "  sni:\n    enabled: true\n"
 	if _, err := Load(writeTestConfig(t, missingAddress)); err == nil {
 		t.Fatal("enabled SNI listener must require listen_address")
+	}
+}
+
+func TestSNIEnabledRequiresPositiveLimits(t *testing.T) {
+	t.Setenv("DNS_CONTROL_API_URL", "http://127.0.0.1:8080")
+	t.Setenv("DNS_CONTROL_API_TOKEN", "example-local-token")
+	base := testConfig + "  sni:\n    enabled: true\n    listen_address: 127.0.0.1:8443\n"
+	cases := []struct {
+		name string
+		extra string
+		want string
+	}{
+		{"missing connections", "    client_hello_timeout: 5s\n", "edge.sni.max_connections"},
+		{"negative connections", "    max_connections: -1\n    client_hello_timeout: 5s\n", "edge.sni.max_connections"},
+		{"missing timeout", "    max_connections: 100\n", "edge.sni.client_hello_timeout"},
+		{"negative timeout", "    max_connections: 100\n    client_hello_timeout: -1s\n", "edge.sni.client_hello_timeout"},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			_, err := Load(writeTestConfig(t, base+tc.extra))
+			if err == nil || !strings.Contains(err.Error(), tc.want) {
+				t.Fatalf("expected %s validation error, got %v", tc.want, err)
+			}
+		})
 	}
 }
