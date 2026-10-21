@@ -2,6 +2,7 @@ package sniproxy
 
 import (
 	"context"
+	"crypto/tls"
 	"net"
 	"testing"
 	"time"
@@ -271,5 +272,65 @@ func TestConcurrentShutdownClosesPendingClients(t *testing.T) {
 			t.Error("connection timed out instead of closing")
 		}
 		_ = conn.Close()
+	}
+}
+
+func TestFailedUpstreamDialReleasesConnectionSlot(t *testing.T) {
+	auth := &Authorizer{}
+	if err := auth.Replace(true, []client.AccessGrant{{
+		ClientIP:  "127.0.0.1",
+		ExpiresAt: time.Now().Add(time.Minute),
+	}}); err != nil {
+		t.Fatal(err)
+	}
+	unused, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	target := unused.Addr().String()
+	_ = unused.Close()
+	listener, err := net.Listen("tcp", "127.0.0.1:0")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	proxy := &Proxy{
+		Access: auth, MaxConnections: 1, DialTimeout: 100 * time.Millisecond,
+		targets: map[string]string{"game.example": target},
+	}
+	done := make(chan error, 1)
+	go func() { done <- proxy.Serve(ctx, listener) }()
+	for i := 0; i < 4; i++ {
+		conn, err := tls.DialWithDialer(&net.Dialer{Timeout: time.Second},
+			"tcp", listener.Addr().String(),
+			&tls.Config{ServerName: "game.example", InsecureSkipVerify: true})
+		if err == nil {
+			_ = conn.Close()
+			t.Fatal("TLS handshake unexpectedly succeeded without upstream")
+		}
+		deadline := time.Now().Add(2 * time.Second)
+		for {
+			proxy.mu.RLock()
+			active := len(proxy.active)
+			sessions := len(proxy.sessions)
+			proxy.mu.RUnlock()
+			if active == 0 && sessions == 0 {
+				break
+			}
+			if time.Now().After(deadline) {
+				t.Fatalf("upstream failure left %d active connections and %d sessions", active, sessions)
+			}
+			time.Sleep(10 * time.Millisecond)
+		}
+	}
+	cancel()
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatal(err)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("proxy did not stop")
 	}
 }
