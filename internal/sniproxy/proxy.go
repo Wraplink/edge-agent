@@ -69,6 +69,10 @@ func (p *Proxy) Remove(domain string) {
 }
 
 func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
+	if err := ctx.Err(); err != nil {
+		_ = listener.Close()
+		return nil
+	}
 	if p.Access == nil {
 		return fmt.Errorf("SNI authorization is required")
 	}
@@ -102,6 +106,10 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 	slots := make(chan struct{}, limit)
 	for {
 		conn, err := listener.Accept()
+		if err == nil && ctx.Err() != nil {
+			_ = conn.Close()
+			return nil
+		}
 		if err != nil {
 			if ctx.Err() != nil {
 				return nil
