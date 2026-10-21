@@ -172,33 +172,35 @@ func routeKey(
 	)
 }
 
-// AllocateAssigned uses a control-plane selected edge IPv4 instead of hashing
-// a destination to an arbitrary address. It refuses addresses not configured
-// on this agent and refuses conflicting assignments for the same route.
+// AllocateAssigned uses a control-plane selected edge IPv4 instead of hashing.
+// The address must belong to this agent's configured public IPv4 inventory.
 func (a *Route) AllocateAssigned(
- ctx context.Context, domain, destinationIP, protocol string,
- start, end uint16, assignedIP string,
+	ctx context.Context, domain, destinationIP, protocol string,
+	start, end uint16, assignedIP string,
 ) (Result, error) {
- assigned := net.ParseIP(strings.TrimSpace(assignedIP))
- if assigned == nil || assigned.To4() == nil {
-  return Result{}, fmt.Errorf("invalid assigned edge IPv4 %q", assignedIP)
- }
- assignedIP = assigned.To4().String()
- allowed := false
- for _, address := range a.addresses {
-  if address == assignedIP { allowed = true; break }
- }
- if !allowed { return Result{}, fmt.Errorf("assigned edge IPv4 %s is not configured on this agent", assignedIP) }
- // Reuse the existing validation and route identity logic.
- result, err := a.Allocate(ctx, domain, destinationIP, protocol, start, end)
- if err != nil { return Result{}, err }
- key := routeKey(normalize(domain), strings.TrimSpace(destinationIP), strings.ToLower(strings.TrimSpace(protocol)), start, end)
- a.mu.Lock()
- defer a.mu.Unlock()
- if existing, ok := a.assigned[key]; ok && existing.Address != assignedIP && existing.Address != result.Address {
-  return Result{}, fmt.Errorf("conflicting route address for %s", domain)
- }
- result.Address = assignedIP
- a.assigned[key] = result
- return result, nil
+	assigned := net.ParseIP(strings.TrimSpace(assignedIP))
+	if assigned == nil || assigned.To4() == nil {
+		return Result{}, fmt.Errorf("invalid assigned edge IPv4 %q", assignedIP)
+	}
+	assignedIP = assigned.To4().String()
+	allowed := false
+	for _, address := range a.addresses {
+		if address == assignedIP {
+			allowed = true
+			break
+		}
+	}
+	if !allowed {
+		return Result{}, fmt.Errorf("assigned edge IPv4 %s is not configured on this agent", assignedIP)
+	}
+	result, err := a.Allocate(ctx, domain, destinationIP, protocol, start, end)
+	if err != nil {
+		return Result{}, err
+	}
+	key := routeKey(normalize(domain), strings.TrimSpace(destinationIP), strings.ToLower(strings.TrimSpace(protocol)), start, end)
+	a.mu.Lock()
+	defer a.mu.Unlock()
+	result.Address = assignedIP
+	a.assigned[key] = result
+	return result, nil
 }
