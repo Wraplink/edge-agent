@@ -342,11 +342,11 @@ func (a *Agent) processRouteLease(ctx context.Context, lease client.Lease) error
 	}
 
 	report := client.ReportRequest{
-		AgentID: a.id,
-		LeaseID: lease.ID,
-		Success: true,
-		Address: activeLease.Address,
-		RouteID: activeLease.RouteID,
+		AgentID:    a.id,
+		LeaseID:    lease.ID,
+		Success:    true,
+		Address:    activeLease.Address,
+		RouteID:    activeLease.RouteID,
 		Generation: lease.Generation,
 	}
 	if err := a.dnsClient.Report(ctx, report); err != nil {
