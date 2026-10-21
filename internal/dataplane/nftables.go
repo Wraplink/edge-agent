@@ -37,7 +37,7 @@ type NFT struct {
 
 type routeState struct {
 	lease client.Lease
-	rule  *nftables.Rule
+	rules []*nftables.Rule
 }
 
 func NewNFT() (*NFT, error) {
@@ -163,13 +163,14 @@ func (n *NFT) AddRoute(
 		return fmt.Errorf("invalid destination IPv4 address %q", lease.DestinationIP)
 	}
 
-	protocol, err := protocolNumber(lease.Protocol)
-	if err != nil {
-		return err
-	}
+	protocols := []string{lease.Protocol}
+	if lease.Protocol == "tcp_udp" { protocols = []string{"tcp", "udp"} }
 
 	portStart, portEnd := destinationPortRange(lease)
-
+	var rules []*nftables.Rule
+	for _, protocolName := range protocols {
+	protocol, err := protocolNumber(protocolName)
+	if err != nil { return err }
 	exprs := make([]expr.Any, 0, 16)
 	if n.accessEnforced {
 		exprs = append(exprs,
@@ -276,13 +277,15 @@ func (n *NFT) AddRoute(
 	}
 
 	n.conn.AddRule(rule)
+	rules = append(rules, rule)
+	}
 	if err := n.conn.Flush(); err != nil {
 		return fmt.Errorf("add route %s: %w", lease.ID, err)
 	}
 
 	n.routes[lease.ID] = &routeState{
 		lease: lease,
-		rule:  rule,
+		rules: rules,
 	}
 	return nil
 }
@@ -303,13 +306,9 @@ func (n *NFT) RemoveRoute(
 		return nil
 	}
 
-	if state.rule == nil || state.rule.Handle == 0 {
-		delete(n.routes, lease.ID)
-		return nil
-	}
-
-	if err := n.conn.DelRule(state.rule); err != nil {
-		return fmt.Errorf("delete route %s: %w", lease.ID, err)
+	for _, rule := range state.rules {
+		if rule == nil || rule.Handle == 0 { return fmt.Errorf("route %s has no rule handle", lease.ID) }
+		if err := n.conn.DelRule(rule); err != nil { return fmt.Errorf("delete route %s: %w", lease.ID, err) }
 	}
 
 	if err := n.conn.Flush(); err != nil {
@@ -346,7 +345,7 @@ func validateLease(lease client.Lease) error {
 	}
 
 	switch lease.Protocol {
-	case "tcp", "udp":
+	case "tcp", "udp", "tcp_udp":
 	default:
 		return fmt.Errorf("unsupported protocol %q", lease.Protocol)
 	}
