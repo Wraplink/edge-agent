@@ -173,8 +173,8 @@ func (n *NFT) AddRoute(
 	for _, protocolName := range protocols {
 		protocol, err := protocolNumber(protocolName)
 		if err != nil {
-				return err
-			}
+			return err
+		}
 		exprs := make([]expr.Any, 0, 16)
 		if n.accessEnforced {
 			exprs = append(exprs,
