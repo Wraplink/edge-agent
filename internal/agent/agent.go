@@ -374,9 +374,10 @@ func (a *Agent) processRouteLease(ctx context.Context, lease client.Lease) error
 
 func (a *Agent) reportFailure(ctx context.Context, lease client.Lease) error {
 	return a.dnsClient.Report(ctx, client.ReportRequest{
-		AgentID: a.id,
-		LeaseID: lease.ID,
-		Success: false,
+		AgentID:    a.id,
+		LeaseID:    lease.ID,
+		Success:    false,
+		Generation: lease.Generation,
 	})
 }
 
