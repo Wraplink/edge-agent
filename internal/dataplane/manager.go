@@ -69,7 +69,7 @@ func (m *Manager) Apply(
 	if lease.DestinationIP == "" {
 		return fmt.Errorf("lease %s has no destination IP", lease.ID)
 	}
-	if lease.Protocol != "tcp" && lease.Protocol != "udp" {
+	if lease.Protocol != "tcp" && lease.Protocol != "udp" && lease.Protocol != "tcp_udp" {
 		return fmt.Errorf("lease %s has invalid protocol %q", lease.ID, lease.Protocol)
 	}
 
