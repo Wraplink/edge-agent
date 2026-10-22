@@ -254,11 +254,23 @@ func (a *Agent) processSNILease(ctx context.Context, lease client.Lease) error {
 	}
 	destinationIP := net.ParseIP(lease.DestinationIP)
 	if destinationIP == nil || destinationIP.To4() == nil {
-		addresses, err := net.DefaultResolver.LookupIP(ctx, "ip4", lease.Domain)
-		if err != nil || len(addresses) == 0 {
-			return fmt.Errorf("resolve SNI destination for %s: %v", lease.Domain, err)
+		// Resolve through an independent upstream to avoid looping back through
+		// WrapLink DNS, which may return the edge agent's own address.
+		resolver := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "udp", "1.1.1.1:53")
+		}}
+		lookupCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		addresses, err := resolver.LookupIP(lookupCtx, "ip4", lease.Domain)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("resolve SNI destination for %s: %w", lease.Domain, err)
 		}
-		destinationIP = addresses[0].To4()
+		for _, address := range addresses {
+			if ip := address.To4(); ip != nil {
+				destinationIP = ip
+				break
+			}
+		}
 	}
 	if destinationIP == nil {
 		return fmt.Errorf("no IPv4 SNI destination for %s", lease.Domain)
