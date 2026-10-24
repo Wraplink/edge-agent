@@ -57,10 +57,10 @@ func (c *Client) Register(
 	routeCapacity int,
 ) error {
 	reqBody := RegisterRequest{
-		AgentID: agentID,
-		Region:  region,
+		AgentID:     agentID,
+		Region:      region,
 		Diagnostics: c.diagnostics,
-		Capacity: Capacity{
+		Capacity:    Capacity{
 			SNI:   sniCapacity,
 			Route: routeCapacity,
 		},
