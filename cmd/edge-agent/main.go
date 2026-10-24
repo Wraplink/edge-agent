@@ -53,6 +53,9 @@ func main() {
 		dataplaneManager,
 	)
 
+	service.SetUpstreamDNS(cfg.Edge.UpstreamDNS)
+	log.Printf("SNI upstream DNS: %v", cfg.Edge.UpstreamDNS)
+
 	// SNI listener configuration is loaded exclusively from config.yml.
 	authorizer := &sniproxy.Authorizer{}
 	service.SetEntitlementObserver(authorizer)
