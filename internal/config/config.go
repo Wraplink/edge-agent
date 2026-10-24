@@ -35,8 +35,8 @@ type CapacityConfig struct {
 }
 
 type EdgeConfig struct {
-	Addresses   []string `yaml:"addresses"`
-	UpstreamDNS []string `yaml:"upstream_dns"`
+	Addresses   []string  `yaml:"addresses"`
+	UpstreamDNS []string  `yaml:"upstream_dns"`
 	SNI         SNIConfig `yaml:"sni"`
 }
 
