@@ -32,7 +32,7 @@ type Client struct {
 	token   string
 
 	diagnostics Diagnostics
-	httpClient *http.Client
+	httpClient  *http.Client
 }
 
 func New(baseURL, token string) *Client {
@@ -45,7 +45,9 @@ func New(baseURL, token string) *Client {
 	}
 }
 
-func (c *Client) SetDiagnostics(d Diagnostics) { c.diagnostics = d }
+func (c *Client) SetDiagnostics(d Diagnostics) {
+	c.diagnostics = d
+}
 
 func (c *Client) Register(
 	ctx context.Context,
