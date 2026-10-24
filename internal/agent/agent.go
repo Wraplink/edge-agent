@@ -252,8 +252,28 @@ func (a *Agent) processSNILease(ctx context.Context, lease client.Lease) error {
 	if a.sniForwarder == nil {
 		return fmt.Errorf("SNI forwarding is not configured")
 	}
-	if lease.DestinationIP == "" {
-		return fmt.Errorf("SNI lease %s has no destination IP", lease.ID)
+	destinationIP := net.ParseIP(lease.DestinationIP)
+	if destinationIP == nil || destinationIP.To4() == nil {
+		// Resolve through an independent upstream to avoid looping back through
+		// WrapLink DNS, which may return the edge agent's own address.
+		resolver := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
+			return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "udp", "1.1.1.1:53")
+		}}
+		lookupCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
+		addresses, err := resolver.LookupIP(lookupCtx, "ip4", lease.Domain)
+		cancel()
+		if err != nil {
+			return fmt.Errorf("resolve SNI destination for %s: %w", lease.Domain, err)
+		}
+		for _, address := range addresses {
+			if ip := address.To4(); ip != nil {
+				destinationIP = ip
+				break
+			}
+		}
+	}
+	if destinationIP == nil {
+		return fmt.Errorf("no IPv4 SNI destination for %s", lease.Domain)
 	}
 	if a.countActive(TypeSNI) >= a.sniCapacity {
 		return fmt.Errorf("SNI capacity exhausted")
@@ -264,7 +284,7 @@ func (a *Agent) processSNILease(ctx context.Context, lease client.Lease) error {
 		return fmt.Errorf("allocate SNI: %w", err)
 	}
 
-	if err := a.sniForwarder.Register(lease.Domain, net.JoinHostPort(lease.DestinationIP, "443")); err != nil {
+	if err := a.sniForwarder.Register(lease.Domain, net.JoinHostPort(destinationIP.String(), "443")); err != nil {
 		_ = a.sniAllocator.Release(ctx, lease.Domain, result)
 		return fmt.Errorf("register SNI forwarding: %w", err)
 	}

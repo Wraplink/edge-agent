@@ -1,0 +1,21 @@
+name: Format Go source
+on:
+  push:
+    branches: [fix/sni-destination-resolution]
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Apply gofmt
+        run: |
+          gofmt -w internal/config/config_test.go internal/agent/agent.go
+          if ! git diff --quiet; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add internal/
+            git commit -m "style: format Go source"
+            git push
+          fi
