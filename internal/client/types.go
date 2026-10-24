@@ -9,12 +9,21 @@ type Capacity struct {
 	Route int `json:"route"`
 }
 
+type Diagnostics struct {
+	AdvertisedIPs []string `json:"advertised_ips,omitempty"`
+	UpstreamDNS []string `json:"upstream_dns,omitempty"`
+	SNIEnabled bool `json:"sni_enabled"`
+	SNIListenAddress string `json:"sni_listen_address,omitempty"`
+	Version string `json:"version,omitempty"`
+}
+
 // ---------- Agent registration ----------
 
 type RegisterRequest struct {
 	AgentID  string   `json:"agent_id"`
 	Region   string   `json:"region,omitempty"`
 	Capacity Capacity `json:"capacity"`
+	Diagnostics Diagnostics `json:"diagnostics"`
 }
 
 type RegisterResponse struct {
