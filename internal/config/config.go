@@ -36,6 +36,7 @@ type CapacityConfig struct {
 
 type EdgeConfig struct {
 	Addresses []string  `yaml:"addresses"`
+	UpstreamDNS []string `yaml:"upstream_dns"`
 	SNI       SNIConfig `yaml:"sni"`
 }
 
@@ -77,6 +78,8 @@ func Load(filename string) (Config, error) {
 	cfg.Agent.ID = strings.TrimSpace(cfg.Agent.ID)
 	cfg.Agent.Region = strings.TrimSpace(cfg.Agent.Region)
 	cfg.Edge.SNI.ListenAddress = strings.TrimSpace(cfg.Edge.SNI.ListenAddress)
+	if len(cfg.Edge.UpstreamDNS) == 0 { cfg.Edge.UpstreamDNS = []string{"1.1.1.1:53", "8.8.8.8:53"} }
+	for i := range cfg.Edge.UpstreamDNS { cfg.Edge.UpstreamDNS[i] = strings.TrimSpace(cfg.Edge.UpstreamDNS[i]) }
 	for i := range cfg.Edge.Addresses {
 		cfg.Edge.Addresses[i] = strings.TrimSpace(cfg.Edge.Addresses[i])
 	}
@@ -125,6 +128,10 @@ func (c Config) Validate() error {
 		if _, _, err := net.SplitHostPort(c.Edge.SNI.ListenAddress); err != nil {
 			return fmt.Errorf("edge.sni.listen_address: %w", err)
 		}
+	}
+	for _, upstream := range c.Edge.UpstreamDNS {
+		host, port, err := net.SplitHostPort(upstream)
+		if err != nil || net.ParseIP(host) == nil || port != "53" { return fmt.Errorf("edge.upstream_dns must contain IP:53 addresses: %q", upstream) }
 	}
 	if len(c.Edge.Addresses) == 0 {
 		return fmt.Errorf("edge.addresses must contain at least one address")
