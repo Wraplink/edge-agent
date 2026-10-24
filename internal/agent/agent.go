@@ -39,7 +39,7 @@ type Agent struct {
 	region   string
 	interval time.Duration
 
-	upstreamDNS []string
+	upstreamDNS   []string
 	sniCapacity   int
 	routeCapacity int
 
