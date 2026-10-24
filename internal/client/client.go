@@ -60,7 +60,7 @@ func (c *Client) Register(
 		AgentID:     agentID,
 		Region:      region,
 		Diagnostics: c.diagnostics,
-		Capacity:    Capacity{
+		Capacity: Capacity{
 			SNI:   sniCapacity,
 			Route: routeCapacity,
 		},
