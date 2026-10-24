@@ -11,6 +11,10 @@ agent:
     route: 1000
 
 edge:
+  # Independent DNS for original SNI destinations; never point to WrapLink DNS Control.
+  upstream_dns:
+    - "1.1.1.1:53"
+    - "8.8.8.8:53"
   addresses:
     - "185.80.196.100"
     - "185.80.196.101"
