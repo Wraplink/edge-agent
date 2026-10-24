@@ -39,6 +39,7 @@ type Agent struct {
 	region   string
 	interval time.Duration
 
+	upstreamDNS []string
 	sniCapacity   int
 	routeCapacity int
 
@@ -85,6 +86,8 @@ func New(
 		entitlements:   make(map[string]client.AccessGrant),
 	}
 }
+
+func (a *Agent) SetUpstreamDNS(servers []string) { a.upstreamDNS = append([]string(nil), servers...) }
 
 func (a *Agent) SetSNIForwarder(forwarder SNIForwarder) {
 	a.sniForwarder = forwarder
@@ -256,12 +259,7 @@ func (a *Agent) processSNILease(ctx context.Context, lease client.Lease) error {
 	if destinationIP == nil || destinationIP.To4() == nil {
 		// Resolve through an independent upstream to avoid looping back through
 		// WrapLink DNS, which may return the edge agent's own address.
-		resolver := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, network, address string) (net.Conn, error) {
-			return (&net.Dialer{Timeout: 3 * time.Second}).DialContext(ctx, "udp", "1.1.1.1:53")
-		}}
-		lookupCtx, cancel := context.WithTimeout(ctx, 4*time.Second)
-		addresses, err := resolver.LookupIP(lookupCtx, "ip4", lease.Domain)
-		cancel()
+		addresses, err := a.resolveSNI(ctx, lease.Domain)
 		if err != nil {
 			return fmt.Errorf("resolve SNI destination for %s: %w", lease.Domain, err)
 		}
@@ -619,4 +617,26 @@ func formatPortRange(start, end uint16) string {
 		return fmt.Sprintf("%d", start)
 	}
 	return fmt.Sprintf("%d-%d", start, end)
+}
+
+func (a *Agent) resolveSNI(ctx context.Context, domain string) ([]net.IP, error) {
+	servers := a.upstreamDNS
+	if len(servers) == 0 { servers = []string{"1.1.1.1:53", "8.8.8.8:53"} }
+	var lastErr error
+	for _, server := range servers {
+		for _, protocol := range []string{"udp", "tcp"} {
+			upstream := server
+			network := protocol
+			resolver := &net.Resolver{PreferGo: true, Dial: func(ctx context.Context, _, _ string) (net.Conn, error) {
+				return (&net.Dialer{}).DialContext(ctx, network, upstream)
+			}}
+			lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
+			ips, err := resolver.LookupIP(lookupCtx, "ip4", domain)
+			cancel()
+			if err == nil && len(ips) > 0 { return ips, nil }
+			if err != nil { lastErr = fmt.Errorf("upstream %s/%s: %w", upstream, network, err) }
+		}
+	}
+	if lastErr == nil { lastErr = fmt.Errorf("no IPv4 records returned") }
+	return nil, lastErr
 }
