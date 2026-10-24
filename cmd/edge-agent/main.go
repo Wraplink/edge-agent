@@ -33,6 +33,12 @@ func main() {
 	log.Printf("capacity: sni=%d route=%d", cfg.Agent.Capacity.SNI, cfg.Agent.Capacity.Route)
 
 	dnsClient := client.New(cfg.DNSControl.URL, cfg.DNSControl.Token)
+	dnsClient.SetDiagnostics(client.Diagnostics{
+		AdvertisedIPs:    cfg.Edge.Addresses,
+		UpstreamDNS:      cfg.Edge.UpstreamDNS,
+		SNIEnabled:       cfg.Edge.SNI.Enabled,
+		SNIListenAddress: cfg.Edge.SNI.ListenAddress,
+	})
 	sniAllocator := allocator.NewSNI(cfg.Edge.Addresses)
 	routeAllocator := allocator.NewRoute(cfg.Edge.Addresses)
 

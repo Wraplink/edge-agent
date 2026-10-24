@@ -31,7 +31,8 @@ type Client struct {
 	baseURL string
 	token   string
 
-	httpClient *http.Client
+	diagnostics Diagnostics
+	httpClient  *http.Client
 }
 
 func New(baseURL, token string) *Client {
@@ -44,6 +45,10 @@ func New(baseURL, token string) *Client {
 	}
 }
 
+func (c *Client) SetDiagnostics(d Diagnostics) {
+	c.diagnostics = d
+}
+
 func (c *Client) Register(
 	ctx context.Context,
 	agentID string,
@@ -52,8 +57,9 @@ func (c *Client) Register(
 	routeCapacity int,
 ) error {
 	reqBody := RegisterRequest{
-		AgentID: agentID,
-		Region:  region,
+		AgentID:     agentID,
+		Region:      region,
+		Diagnostics: c.diagnostics,
 		Capacity: Capacity{
 			SNI:   sniCapacity,
 			Route: routeCapacity,
