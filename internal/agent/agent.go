@@ -87,7 +87,9 @@ func New(
 	}
 }
 
-func (a *Agent) SetUpstreamDNS(servers []string) { a.upstreamDNS = append([]string(nil), servers...) }
+func (a *Agent) SetUpstreamDNS(servers []string) {
+	a.upstreamDNS = append([]string(nil), servers...)
+}
 
 func (a *Agent) SetSNIForwarder(forwarder SNIForwarder) {
 	a.sniForwarder = forwarder
@@ -621,7 +623,9 @@ func formatPortRange(start, end uint16) string {
 
 func (a *Agent) resolveSNI(ctx context.Context, domain string) ([]net.IP, error) {
 	servers := a.upstreamDNS
-	if len(servers) == 0 { servers = []string{"1.1.1.1:53", "8.8.8.8:53"} }
+	if len(servers) == 0 {
+		servers = []string{"1.1.1.1:53", "8.8.8.8:53"}
+	}
 	var lastErr error
 	for _, server := range servers {
 		for _, protocol := range []string{"udp", "tcp"} {
@@ -633,10 +637,16 @@ func (a *Agent) resolveSNI(ctx context.Context, domain string) ([]net.IP, error)
 			lookupCtx, cancel := context.WithTimeout(ctx, 3*time.Second)
 			ips, err := resolver.LookupIP(lookupCtx, "ip4", domain)
 			cancel()
-			if err == nil && len(ips) > 0 { return ips, nil }
-			if err != nil { lastErr = fmt.Errorf("upstream %s/%s: %w", upstream, network, err) }
+			if err == nil && len(ips) > 0 {
+				return ips, nil
+			}
+			if err != nil {
+				lastErr = fmt.Errorf("upstream %s/%s: %w", upstream, network, err)
+			}
 		}
 	}
-	if lastErr == nil { lastErr = fmt.Errorf("no IPv4 records returned") }
+	if lastErr == nil {
+		lastErr = fmt.Errorf("no IPv4 records returned")
+	}
 	return nil, lastErr
 }
