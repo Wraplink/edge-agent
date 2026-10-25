@@ -70,7 +70,6 @@ func main() {
 	authorizer := &sniproxy.Authorizer{}
 	service.SetEntitlementObserver(authorizer)
 
-
 	ctx, cancel := signal.NotifyContext(
 		context.Background(),
 		os.Interrupt,
@@ -109,7 +108,6 @@ func main() {
 	}
 }
 
-
 // startAccessDiagnostics exposes a loopback-only inspection API when explicitly
 // configured with a token. It never provides an authorization bypass.
 func startAccessDiagnostics(ctx context.Context, authorizer *sniproxy.Authorizer) {
@@ -133,9 +131,9 @@ func startAccessDiagnostics(ctx context.Context, authorizer *sniproxy.Authorizer
 		enforced, version, entries := authorizer.Snapshot()
 		w.Header().Set("Content-Type", "application/json")
 		_ = json.NewEncoder(w).Encode(map[string]any{
-			"enforced": enforced,
-			"revision": version,
-			"count": len(entries),
+			"enforced":    enforced,
+			"revision":    version,
+			"count":       len(entries),
 			"allowed_ips": entries,
 		})
 	})
