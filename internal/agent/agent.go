@@ -12,7 +12,7 @@ import (
 
 	"github.com/wraplink/edge-agent/internal/allocator"
 	"github.com/wraplink/edge-agent/internal/client"
- "github.com/wraplink/edge-agent/internal/inventory"
+	"github.com/wraplink/edge-agent/internal/inventory"
 )
 
 const (
@@ -45,8 +45,8 @@ type Agent struct {
 	routeCapacity int
 
 	dnsClient *client.Client
- routeInventory *inventory.Client
- routePublicIPs []string
+	routeInventory *inventory.Client
+	routePublicIPs []string
 
 	sniAllocator        allocator.SNIAllocator
 	routeAllocator      allocator.RouteAllocator
@@ -91,17 +91,19 @@ func New(
 }
 
 func (a *Agent) SetRouteInventory(c inventory.Client, addresses []string) {
- a.routeInventory=&c
- a.routePublicIPs=append([]string(nil),addresses...)
+	a.routeInventory = &c
+	a.routePublicIPs = append([]string(nil), addresses...)
 }
 
 func (a *Agent) syncRouteInventory(ctx context.Context) {
- if a.routeInventory==nil{return}
- if err:=a.routeInventory.Register(ctx,a.id,a.routePublicIPs);err!=nil {
-  log.Printf("agent: backend route inventory registration failed: %v",err)
- } else {
-  log.Printf("agent: backend route inventory registered agent=%s addresses=%d",a.id,len(a.routePublicIPs))
- }
+	if a.routeInventory == nil {
+		return
+	}
+	if err := a.routeInventory.Register(ctx, a.id, a.routePublicIPs); err != nil {
+		log.Printf("agent: backend route inventory registration failed: %v", err)
+	} else {
+		log.Printf("agent: backend route inventory registered agent=%s addresses=%d", a.id, len(a.routePublicIPs))
+	}
 }
 
 func (a *Agent) SetUpstreamDNS(servers []string) {
@@ -132,7 +134,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 
 	a.syncRouteInventory(ctx)
- if err := a.cycle(ctx); err != nil {
+	if err := a.cycle(ctx); err != nil {
 		log.Printf("agent: initial cycle failed: %v", err)
 	}
 
@@ -144,7 +146,7 @@ func (a *Agent) Run(ctx context.Context) error {
 		case <-ctx.Done():
 			return ctx.Err()
 		case <-ticker.C:
-            a.syncRouteInventory(ctx)
+			a.syncRouteInventory(ctx)
 			if err := a.cycle(ctx); err != nil {
 				log.Printf("agent: cycle failed: %v", err)
 			}
