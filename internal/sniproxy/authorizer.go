@@ -3,6 +3,7 @@ package sniproxy
 import (
 	"fmt"
 	"net"
+	"sort"
 	"strings"
 	"sync"
 	"time"
@@ -57,4 +58,28 @@ func (a *Authorizer) Version() uint64 {
 	a.mu.RLock()
 	defer a.mu.RUnlock()
 	return a.version
+}
+
+
+// AccessEntry describes a currently effective source-IP grant.
+type AccessEntry struct {
+	ClientIP string    `json:"client_ip"`
+	ExpiresAt time.Time `json:"expires_at"`
+}
+
+// Snapshot returns a copy without exposing internal mutable state.
+func (a *Authorizer) Snapshot() (bool, uint64, []AccessEntry) {
+	a.mu.RLock()
+	defer a.mu.RUnlock()
+	entries := make([]AccessEntry, 0, len(a.grants))
+	now := time.Now()
+	if a.enforced {
+		for ip, expiry := range a.grants {
+			if now.Before(expiry) {
+				entries = append(entries, AccessEntry{ClientIP: ip, ExpiresAt: expiry})
+			}
+		}
+	}
+	sort.Slice(entries, func(i, j int) bool { return entries[i].ClientIP < entries[j].ClientIP })
+	return a.enforced, a.version, entries
 }
