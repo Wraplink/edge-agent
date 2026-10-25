@@ -60,10 +60,9 @@ func (a *Authorizer) Version() uint64 {
 	return a.version
 }
 
-
 // AccessEntry describes a currently effective source-IP grant.
 type AccessEntry struct {
-	ClientIP string    `json:"client_ip"`
+	ClientIP  string    `json:"client_ip"`
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
