@@ -15,6 +15,13 @@ type Config struct {
 	DNSControl DNSControlConfig `yaml:"dns_control"`
 	Agent      AgentConfig      `yaml:"agent"`
 	Edge       EdgeConfig       `yaml:"edge"`
+	Diagnostics DiagnosticsConfig `yaml:"diagnostics"`
+}
+
+type DiagnosticsConfig struct {
+	Enabled bool `yaml:"enabled"`
+	ListenAddress string `yaml:"listen_address"`
+	Token string `yaml:"token"`
 }
 
 type DNSControlConfig struct {
@@ -78,6 +85,7 @@ func Load(filename string) (Config, error) {
 	cfg.Agent.ID = strings.TrimSpace(cfg.Agent.ID)
 	cfg.Agent.Region = strings.TrimSpace(cfg.Agent.Region)
 	cfg.Edge.SNI.ListenAddress = strings.TrimSpace(cfg.Edge.SNI.ListenAddress)
+	cfg.Diagnostics.ListenAddress = strings.TrimSpace(cfg.Diagnostics.ListenAddress)
 	if len(cfg.Edge.UpstreamDNS) == 0 {
 		cfg.Edge.UpstreamDNS = []string{"1.1.1.1:53", "8.8.8.8:53"}
 	}
@@ -95,6 +103,11 @@ func Load(filename string) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if c.Diagnostics.Enabled {
+		if c.Diagnostics.Token == "" { return fmt.Errorf("diagnostics.token is required when enabled") }
+		if c.Diagnostics.ListenAddress == "" { return fmt.Errorf("diagnostics.listen_address is required when enabled") }
+		if _, _, err := net.SplitHostPort(c.Diagnostics.ListenAddress); err != nil { return fmt.Errorf("diagnostics.listen_address: %w", err) }
+	}
 	if c.DNSControl.URL == "" {
 		return fmt.Errorf("dns_control.url is required")
 	}
