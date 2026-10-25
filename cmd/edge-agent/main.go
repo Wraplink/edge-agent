@@ -18,6 +18,7 @@ import (
 	"github.com/wraplink/edge-agent/internal/client"
 	"github.com/wraplink/edge-agent/internal/config"
 	"github.com/wraplink/edge-agent/internal/dataplane"
+	"github.com/wraplink/edge-agent/internal/inventory"
 	"github.com/wraplink/edge-agent/internal/sniproxy"
 )
 
@@ -64,6 +65,9 @@ func main() {
 	)
 
 	service.SetUpstreamDNS(cfg.Edge.UpstreamDNS)
+	if cfg.Agent.Capacity.Route > 0 {
+		service.SetRouteInventory(inventory.Client{URL: cfg.Backend.URL, Key: cfg.Backend.ControlKey}, cfg.Backend.RoutePublicIPs)
+	}
 	log.Printf("SNI upstream DNS: %v", cfg.Edge.UpstreamDNS)
 
 	// SNI listener configuration is loaded exclusively from config.yml.

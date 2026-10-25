@@ -2,6 +2,14 @@ dns_control:
   url: ${DNS_CONTROL_API_URL}
   token: ${DNS_CONTROL_API_TOKEN}
 
+backend:
+  # Required when agent.capacity.route > 0. Must be reachable from the edge host.
+  url: ${WRAPLINK_BACKEND_URL}
+  control_key: ${NETWORK_CONTROL_KEY}
+  # Dedicated IPv4 addresses assigned to this host; do not advertise unrelated IPs.
+  route_public_ips:
+    - "185.80.196.102"
+
 agent:
   id: "edge-agent-01"
   region: "eu-1"
