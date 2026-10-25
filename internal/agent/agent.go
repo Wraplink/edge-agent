@@ -44,7 +44,7 @@ type Agent struct {
 	sniCapacity   int
 	routeCapacity int
 
-	dnsClient *client.Client
+	dnsClient       *client.Client
 	routeInventory *inventory.Client
 	routePublicIPs []string
 
