@@ -2,12 +2,16 @@ package main
 
 import (
 	"context"
+	"crypto/subtle"
+	"encoding/json"
 	"flag"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/wraplink/edge-agent/internal/agent"
 	"github.com/wraplink/edge-agent/internal/allocator"
@@ -72,6 +76,7 @@ func main() {
 		syscall.SIGTERM,
 	)
 	defer cancel()
+	startAccessDiagnostics(ctx, authorizer)
 
 	if cfg.Edge.SNI.Enabled {
 		address := cfg.Edge.SNI.ListenAddress
@@ -101,4 +106,53 @@ func main() {
 		}
 		log.Fatalf("edge-agent failed: %v", err)
 	}
+}
+
+// startAccessDiagnostics exposes a loopback-only inspection API when explicitly
+// configured with a token. It never provides an authorization bypass.
+func startAccessDiagnostics(ctx context.Context, authorizer *sniproxy.Authorizer) {
+	token := os.Getenv("WRAPLINK_DIAGNOSTICS_TOKEN")
+	if token == "" {
+		return
+	}
+	mux := http.NewServeMux()
+	mux.HandleFunc("/api/v1/access/allowed-ips", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet {
+			w.Header().Set("Allow", http.MethodGet)
+			http.Error(w, "method not allowed", http.StatusMethodNotAllowed)
+			return
+		}
+		provided := r.Header.Get("Authorization")
+		expected := "Bearer " + token
+		if subtle.ConstantTimeCompare([]byte(provided), []byte(expected)) != 1 {
+			http.Error(w, "unauthorized", http.StatusUnauthorized)
+			return
+		}
+		enforced, version, entries := authorizer.Snapshot()
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"enforced":    enforced,
+			"revision":    version,
+			"count":       len(entries),
+			"allowed_ips": entries,
+		})
+	})
+	listener, err := net.Listen("tcp", "127.0.0.1:9091")
+	if err != nil {
+		log.Printf("access diagnostics listener unavailable: %v", err)
+		return
+	}
+	server := &http.Server{Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	go func() {
+		<-ctx.Done()
+		shutdownCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		_ = server.Shutdown(shutdownCtx)
+	}()
+	go func() {
+		if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+			log.Printf("access diagnostics stopped: %v", err)
+		}
+	}()
+	log.Printf("access diagnostics listening on %s", listener.Addr())
 }
