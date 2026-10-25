@@ -76,7 +76,7 @@ func main() {
 		syscall.SIGTERM,
 	)
 	defer cancel()
-	startAccessDiagnostics(ctx, authorizer)
+	startAccessDiagnostics(ctx, authorizer, cfg.Diagnostics)
 
 	if cfg.Edge.SNI.Enabled {
 		address := cfg.Edge.SNI.ListenAddress
@@ -108,10 +108,13 @@ func main() {
 	}
 }
 
-// startAccessDiagnostics exposes a loopback-only inspection API when explicitly
-// configured with a token. It never provides an authorization bypass.
-func startAccessDiagnostics(ctx context.Context, authorizer *sniproxy.Authorizer) {
-	token := os.Getenv("WRAPLINK_DIAGNOSTICS_TOKEN")
+// startAccessDiagnostics exposes an explicitly configured inspection API.
+// Operators must restrict network access and supply a strong token.
+func startAccessDiagnostics(ctx context.Context, authorizer *sniproxy.Authorizer, cfg config.DiagnosticsConfig) {
+	if !cfg.Enabled {
+		return
+	}
+	token := cfg.Token
 	if token == "" {
 		return
 	}
@@ -137,7 +140,7 @@ func startAccessDiagnostics(ctx context.Context, authorizer *sniproxy.Authorizer
 			"allowed_ips": entries,
 		})
 	})
-	listener, err := net.Listen("tcp", "127.0.0.1:9091")
+	listener, err := net.Listen("tcp", cfg.ListenAddress)
 	if err != nil {
 		log.Printf("access diagnostics listener unavailable: %v", err)
 		return
