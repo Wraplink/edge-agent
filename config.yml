@@ -29,4 +29,4 @@ edge:
 diagnostics:
   enabled: false
   listen_address: "127.0.0.1:9091"
-  token: "${WRAPLINK_DIAGNOSTICS_TOKEN}"
+  token: "" # Set to ${WRAPLINK_DIAGNOSTICS_TOKEN} when enabling diagnostics
