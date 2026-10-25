@@ -13,7 +13,7 @@ import (
 
 type Config struct {
 	DNSControl  DNSControlConfig  `yaml:"dns_control"`
- Backend BackendConfig `yaml:"backend"`
+	Backend     BackendConfig     `yaml:"backend"`
 	Agent       AgentConfig       `yaml:"agent"`
 	Edge        EdgeConfig        `yaml:"edge"`
 	Diagnostics DiagnosticsConfig `yaml:"diagnostics"`
@@ -26,9 +26,9 @@ type DiagnosticsConfig struct {
 }
 
 type BackendConfig struct {
- URL string `yaml:"url"`
- ControlKey string `yaml:"control_key"`
- RoutePublicIPs []string `yaml:"route_public_ips"`
+	URL            string   `yaml:"url"`
+	ControlKey     string   `yaml:"control_key"`
+	RoutePublicIPs []string `yaml:"route_public_ips"`
 }
 
 type DNSControlConfig struct {
@@ -89,7 +89,7 @@ func Load(filename string) (Config, error) {
 	}
 
 	cfg.DNSControl.URL = strings.TrimRight(strings.TrimSpace(cfg.DNSControl.URL), "/")
- cfg.Backend.URL = strings.TrimRight(strings.TrimSpace(cfg.Backend.URL), "/")
+	cfg.Backend.URL = strings.TrimRight(strings.TrimSpace(cfg.Backend.URL), "/")
 	cfg.Agent.ID = strings.TrimSpace(cfg.Agent.ID)
 	cfg.Agent.Region = strings.TrimSpace(cfg.Agent.Region)
 	cfg.Edge.SNI.ListenAddress = strings.TrimSpace(cfg.Edge.SNI.ListenAddress)
@@ -122,17 +122,26 @@ func (c Config) Validate() error {
 			return fmt.Errorf("diagnostics.listen_address: %w", err)
 		}
 	}
-	if c.Agent.Capacity.Route > 0 && (c.Backend.URL == "" || c.Backend.ControlKey == "" || len(c.Backend.RoutePublicIPs)==0) {
-  return fmt.Errorf("backend.url, backend.control_key and backend.route_public_ips are required when route capacity is enabled")
- }
- for _, address := range c.Backend.RoutePublicIPs {
-  ip:=net.ParseIP(strings.TrimSpace(address))
-  if ip==nil || ip.To4()==nil {return fmt.Errorf("backend.route_public_ips must contain valid IPv4 addresses: %q",address)}
-  found:=false
-  for _,edgeAddress:=range c.Edge.Addresses {if edgeAddress==ip.To4().String(){found=true;break}}
-  if !found {return fmt.Errorf("backend.route_public_ips address %q is not listed in edge.addresses",address)}
- }
- if c.DNSControl.URL == "" {
+	if c.Agent.Capacity.Route > 0 && (c.Backend.URL == "" || c.Backend.ControlKey == "" || len(c.Backend.RoutePublicIPs) == 0) {
+		return fmt.Errorf("backend.url, backend.control_key and backend.route_public_ips are required when route capacity is enabled")
+	}
+	for _, address := range c.Backend.RoutePublicIPs {
+		ip := net.ParseIP(strings.TrimSpace(address))
+		if ip == nil || ip.To4() == nil {
+			return fmt.Errorf("backend.route_public_ips must contain valid IPv4 addresses: %q", address)
+		}
+		found := false
+		for _, edgeAddress := range c.Edge.Addresses {
+			if edgeAddress == ip.To4().String() {
+				found = true
+				break
+			}
+		}
+		if !found {
+			return fmt.Errorf("backend.route_public_ips address %q is not listed in edge.addresses", address)
+		}
+	}
+	if c.DNSControl.URL == "" {
 		return fmt.Errorf("dns_control.url is required")
 	}
 	if strings.TrimSpace(c.DNSControl.Token) == "" {
