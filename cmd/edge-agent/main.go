@@ -2,12 +2,12 @@ package main
 
 import (
 	"context"
-	"flag"
 	"crypto/subtle"
 	"encoding/json"
-	"net/http"
+	"flag"
 	"log"
 	"net"
+	"net/http"
 	"os"
 	"os/signal"
 	"syscall"
