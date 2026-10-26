@@ -20,16 +20,19 @@ import (
 const (
 	tableName       = "wraplink"
 	chainName       = "prerouting"
+	outputChainName = "output"
 	entitledSetName = "entitled_v4"
 )
 
 type NFT struct {
 	mu sync.Mutex
 
-	conn        *nftables.Conn
-	table       *nftables.Table
-	chain       *nftables.Chain
-	entitledSet *nftables.Set
+	conn               *nftables.Conn
+	table              *nftables.Table
+	chain              *nftables.Chain
+	outputChain        *nftables.Chain
+	localOutputEnabled bool
+	entitledSet        *nftables.Set
 
 	accessConfigured bool
 	accessEnforced   bool
@@ -38,11 +41,13 @@ type NFT struct {
 }
 
 type routeState struct {
-	lease client.Lease
-	rules []*nftables.Rule
+	lease       client.Lease
+	rules       []*nftables.Rule
+	outputRules []*nftables.Rule
 }
 
-func NewNFT() (*NFT, error) {
+func NewNFT(localOutput ...bool) (*NFT, error) {
+	enabled := len(localOutput) > 0 && localOutput[0]
 	conn := &nftables.Conn{}
 
 	table := conn.AddTable(&nftables.Table{
@@ -58,6 +63,13 @@ func NewNFT() (*NFT, error) {
 		Priority: nftables.ChainPriorityNATDest,
 	})
 
+	outputChain := conn.AddChain(&nftables.Chain{
+		Table:    table,
+		Name:     outputChainName,
+		Type:     nftables.ChainTypeNAT,
+		Hooknum:  nftables.ChainHookOutput,
+		Priority: nftables.ChainPriorityNATDest,
+	})
 	entitledSet := &nftables.Set{
 		Table:   table,
 		Name:    entitledSetName,
@@ -72,11 +84,13 @@ func NewNFT() (*NFT, error) {
 	}
 
 	return &NFT{
-		conn:        conn,
-		table:       table,
-		chain:       chain,
-		entitledSet: entitledSet,
-		routes:      make(map[string]*routeState),
+		conn:               conn,
+		table:              table,
+		chain:              chain,
+		outputChain:        outputChain,
+		localOutputEnabled: enabled,
+		entitledSet:        entitledSet,
+		routes:             make(map[string]*routeState),
 	}, nil
 }
 
@@ -157,6 +171,11 @@ func (n *NFT) AddRoute(
 		}
 		if err := n.removeLeaseRules(lease.ID, state.rules); err != nil {
 			return fmt.Errorf("replace changed route %s: %w", lease.ID, err)
+		}
+		if n.localOutputEnabled {
+			if err := n.removeOutputLeaseRules(lease.ID, state.outputRules); err != nil {
+				return fmt.Errorf("replace changed output route %s: %w", lease.ID, err)
+			}
 		}
 		delete(n.routes, lease.ID)
 	}
@@ -304,8 +323,34 @@ func (n *NFT) AddRoute(
 			return fmt.Errorf("reconcile route address %s: %w", edgeIP, err)
 		}
 	}
+	// OUTPUT handles connections originating on the edge host itself.
+	// Source entitlement lookup is preserved in the copied expressions.
+	outputRules := make([]*nftables.Rule, 0, len(rules))
+	for _, rule := range rules {
+		outputRules = append(outputRules, &nftables.Rule{
+			Table:    n.table,
+			Chain:    n.outputChain,
+			Exprs:    rule.Exprs,
+			UserData: rule.UserData,
+		})
+	}
+	if n.localOutputEnabled {
+		if err := n.removeOutputLeaseRules(lease.ID, outputRules); err != nil {
+			return fmt.Errorf("reconcile output route %s: %w", lease.ID, err)
+		}
+		if portStart == 0 && portEnd == 0 {
+			if err := n.removeStaleOutputAddressRules(edgeIP); err != nil {
+				return fmt.Errorf("reconcile output address %s: %w", edgeIP, err)
+			}
+		}
+	}
 	for _, rule := range rules {
 		n.conn.AddRule(rule)
+	}
+	if n.localOutputEnabled {
+		for _, rule := range outputRules {
+			n.conn.AddRule(rule)
+		}
 	}
 	if err := n.conn.Flush(); err != nil {
 		return fmt.Errorf("add route %s: %w", lease.ID, err)
@@ -315,9 +360,15 @@ func (n *NFT) AddRoute(
 		return fmt.Errorf("recover added route handles %s: %w", lease.ID, err)
 	}
 
+	if n.localOutputEnabled {
+		if err := n.recoverOutputRouteHandles(lease.ID, outputRules); err != nil {
+			return fmt.Errorf("recover output route handles %s: %w", lease.ID, err)
+		}
+	}
 	n.routes[lease.ID] = &routeState{
-		lease: lease,
-		rules: rules,
+		lease:       lease,
+		rules:       rules,
+		outputRules: outputRules,
 	}
 	return nil
 }
@@ -336,12 +387,23 @@ func (n *NFT) RemoveRoute(
 	state, exists := n.routes[lease.ID]
 	if !exists {
 		// Remove orphaned tagged rules left by a previous process.
-		return n.removeLeaseRules(lease.ID, nil)
+		if err := n.removeLeaseRules(lease.ID, nil); err != nil {
+			return err
+		}
+		if n.localOutputEnabled {
+			return n.removeOutputLeaseRules(lease.ID, nil)
+		}
+		return nil
 	}
 	if err := n.removeLeaseRules(lease.ID, state.rules); err != nil {
 		return fmt.Errorf("delete route %s: %w", lease.ID, err)
 	}
 
+	if n.localOutputEnabled {
+		if err := n.removeOutputLeaseRules(lease.ID, state.outputRules); err != nil {
+			return err
+		}
+	}
 	delete(n.routes, lease.ID)
 	return nil
 }
@@ -433,6 +495,82 @@ func isRouteDNATForAddress(rule *nftables.Rule, address net.IP) bool {
 		}
 	}
 	return matchedAddress && matchedNAT
+}
+
+// removeOutputLeaseRules reconciles the local NAT chain using the same lease tags.
+func (n *NFT) removeOutputLeaseRules(leaseID string, wanted []*nftables.Rule) error {
+	installed, err := n.conn.GetRules(n.table, n.outputChain)
+	if err != nil {
+		return err
+	}
+	prefix := []byte("wraplink:lease:" + leaseID + ":")
+	removed := 0
+	for _, candidate := range installed {
+		owned := bytes.HasPrefix(candidate.UserData, prefix)
+		if !owned && len(candidate.UserData) == 0 {
+			for _, rule := range wanted {
+				if reflect.DeepEqual(rule.Exprs, candidate.Exprs) {
+					owned = true
+					break
+				}
+			}
+		}
+		if !owned || candidate.Handle == 0 {
+			continue
+		}
+		if err := n.conn.DelRule(candidate); err != nil {
+			return err
+		}
+		removed++
+	}
+	if removed > 0 {
+		return n.conn.Flush()
+	}
+	return nil
+}
+
+func (n *NFT) removeStaleOutputAddressRules(address net.IP) error {
+	installed, err := n.conn.GetRules(n.table, n.outputChain)
+	if err != nil {
+		return err
+	}
+	removed := 0
+	for _, rule := range installed {
+		if rule.Handle == 0 || !isRouteDNATForAddress(rule, address) {
+			continue
+		}
+		if err := n.conn.DelRule(rule); err != nil {
+			return err
+		}
+		removed++
+	}
+	if removed > 0 {
+		return n.conn.Flush()
+	}
+	return nil
+}
+
+func (n *NFT) recoverOutputRouteHandles(leaseID string, rules []*nftables.Rule) error {
+	installed, err := n.conn.GetRules(n.table, n.outputChain)
+	if err != nil {
+		return err
+	}
+	for _, wanted := range rules {
+		var match *nftables.Rule
+		for _, candidate := range installed {
+			if bytes.Equal(wanted.UserData, candidate.UserData) {
+				if match != nil {
+					return fmt.Errorf("ambiguous output rule for lease %s", leaseID)
+				}
+				match = candidate
+			}
+		}
+		if match == nil {
+			return fmt.Errorf("missing output rule for lease %s", leaseID)
+		}
+		wanted.Handle = match.Handle
+	}
+	return nil
 }
 
 // recoverRouteHandles reconciles in-memory rules with kernel-assigned handles.

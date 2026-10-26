@@ -16,8 +16,8 @@ type Manager struct {
 	active map[string]client.Lease
 }
 
-func NewManager() (*Manager, error) {
-	nft, err := NewNFT()
+func NewManager(localOutput ...bool) (*Manager, error) {
+	nft, err := NewNFT(localOutput...)
 	if err != nil {
 		return nil, err
 	}
