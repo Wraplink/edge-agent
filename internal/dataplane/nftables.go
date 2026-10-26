@@ -151,8 +151,14 @@ func (n *NFT) AddRoute(
 	if !n.accessConfigured || !n.accessEnforced {
 		return fmt.Errorf("route requires active source access enforcement")
 	}
-	if _, exists := n.routes[lease.ID]; exists {
-		return nil
+	if state, exists := n.routes[lease.ID]; exists {
+		if reflect.DeepEqual(state.lease, lease) {
+			return nil
+		}
+		if err := n.removeLeaseRules(lease.ID, state.rules); err != nil {
+			return fmt.Errorf("replace changed route %s: %w", lease.ID, err)
+		}
+		delete(n.routes, lease.ID)
 	}
 
 	edgeIP := net.ParseIP(lease.Address).To4()
@@ -283,8 +289,15 @@ func (n *NFT) AddRoute(
 			UserData: []byte("wraplink:lease:" + lease.ID + ":" + protocolName),
 		}
 
-		n.conn.AddRule(rule)
 		rules = append(rules, rule)
+	}
+	// Reconcile stale rules before installing replacements. Only remove rules
+	// carrying this lease's tag or exact legacy expression matches.
+	if err := n.removeLeaseRules(lease.ID, rules); err != nil {
+		return fmt.Errorf("reconcile route %s: %w", lease.ID, err)
+	}
+	for _, rule := range rules {
+		n.conn.AddRule(rule)
 	}
 	if err := n.conn.Flush(); err != nil {
 		return fmt.Errorf("add route %s: %w", lease.ID, err)
@@ -314,27 +327,53 @@ func (n *NFT) RemoveRoute(
 
 	state, exists := n.routes[lease.ID]
 	if !exists {
-		return nil
+		// Remove orphaned tagged rules left by a previous process.
+		return n.removeLeaseRules(lease.ID, nil)
 	}
-
-	if err := n.recoverRouteHandles(lease.ID, state.rules); err != nil {
-		return fmt.Errorf("recover route handles %s: %w", lease.ID, err)
-	}
-
-	for _, rule := range state.rules {
-		if rule == nil || rule.Handle == 0 {
-			return fmt.Errorf("route %s has no rule handle", lease.ID)
-		}
-		if err := n.conn.DelRule(rule); err != nil {
-			return fmt.Errorf("delete route %s: %w", lease.ID, err)
-		}
-	}
-
-	if err := n.conn.Flush(); err != nil {
-		return fmt.Errorf("flush route deletion %s: %w", lease.ID, err)
+	if err := n.removeLeaseRules(lease.ID, state.rules); err != nil {
+		return fmt.Errorf("delete route %s: %w", lease.ID, err)
 	}
 
 	delete(n.routes, lease.ID)
+	return nil
+}
+
+// removeLeaseRules removes all rules owned by a lease, including duplicates
+// left by failed installations or previous agent processes. Legacy untagged
+// rules are removed only when their full expression sequence matches.
+func (n *NFT) removeLeaseRules(leaseID string, wanted []*nftables.Rule) error {
+	installed, err := n.conn.GetRules(n.table, n.chain)
+	if err != nil {
+		return fmt.Errorf("list nftables rules: %w", err)
+	}
+	prefix := []byte("wraplink:lease:" + leaseID + ":")
+	removed := 0
+	for _, candidate := range installed {
+		if candidate.Handle == 0 {
+			continue
+		}
+		owned := bytes.HasPrefix(candidate.UserData, prefix)
+		if !owned && len(candidate.UserData) == 0 {
+			for _, rule := range wanted {
+				if rule != nil && reflect.DeepEqual(rule.Exprs, candidate.Exprs) {
+					owned = true
+					break
+				}
+			}
+		}
+		if !owned {
+			continue
+		}
+		if err := n.conn.DelRule(candidate); err != nil {
+			return fmt.Errorf("delete stale lease rule %s handle %d: %w", leaseID, candidate.Handle, err)
+		}
+		removed++
+	}
+	if removed > 0 {
+		if err := n.conn.Flush(); err != nil {
+			return fmt.Errorf("flush stale lease rules %s: %w", leaseID, err)
+		}
+	}
 	return nil
 }
 
