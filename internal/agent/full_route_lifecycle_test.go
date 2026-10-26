@@ -31,7 +31,9 @@ func (d *routeLifecycleDataplane) Remove(_ context.Context, id string) error {
 	return nil
 }
 
-func (d *routeLifecycleDataplane) ReplaceAccessGrants(context.Context, bool, []client.AccessGrant) error { return nil }
+func (d *routeLifecycleDataplane) ReplaceAccessGrants(context.Context, bool, []client.AccessGrant) error {
+	return nil
+}
 
 func TestFullRouteProvisionAckAndRestartWithdrawal(t *testing.T) {
 	const address = "192.0.2.10"
@@ -63,7 +65,8 @@ func TestFullRouteProvisionAckAndRestartWithdrawal(t *testing.T) {
 
 	dp := &routeLifecycleDataplane{}
 	a := New("edge-1", "eu", 0, 0, 1, client.New(server.URL, ""), nil, allocator.NewRoute([]string{address}), dp)
-	lease := client.Lease{ID: "lease-7", Domain: "game.example", Type: TypeRoute, Address: address, Generation: 7, DestinationIP: "198.51.100.20", Protocol: "tcp_udp"}
+	lease := client.Lease{ID: "lease-7", Domain: "game.example", Type: TypeRoute, Address: address,
+		Generation: 7, DestinationIP: "198.51.100.20", Protocol: "tcp_udp"}
 	if err := a.processRouteLease(context.Background(), lease); err != nil {
 		t.Fatalf("provision: %v", err)
 	}
