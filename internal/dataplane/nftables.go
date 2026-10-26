@@ -30,7 +30,7 @@ type NFT struct {
 	conn        *nftables.Conn
 	table       *nftables.Table
 	chain       *nftables.Chain
-	outputChain *nftables.Chain
+	outputChain        *nftables.Chain
 	localOutputEnabled bool
 	entitledSet *nftables.Set
 
@@ -84,12 +84,12 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 	}
 
 	return &NFT{
-		conn:        conn,
-		table:       table,
-		chain:       chain,
-		outputChain: outputChain,
+		conn:               conn,
+		table:              table,
+		chain:              chain,
+		outputChain:        outputChain,
 		localOutputEnabled: enabled,
-		entitledSet: entitledSet,
+		entitledSet:        entitledSet,
 		routes:      make(map[string]*routeState),
 	}, nil
 }
