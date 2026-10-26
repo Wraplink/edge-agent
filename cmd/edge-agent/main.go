@@ -47,7 +47,7 @@ func main() {
 	sniAllocator := allocator.NewSNI(cfg.Edge.Addresses)
 	routeAllocator := allocator.NewRoute(cfg.Edge.Addresses)
 
-	dataplaneManager, err := dataplane.NewManager()
+	dataplaneManager, err := dataplane.NewManager(cfg.Edge.LocalOutputDNAT)
 	if err != nil {
 		log.Fatalf("create dataplane manager: %v", err)
 	}
