@@ -296,6 +296,14 @@ func (n *NFT) AddRoute(
 	if err := n.removeLeaseRules(lease.ID, rules); err != nil {
 		return fmt.Errorf("reconcile route %s: %w", lease.ID, err)
 	}
+	// Full-address routes exclusively own their allocated destination IP.
+	// A prior process may have installed a different lease ID or origin IP.
+	// Remove its DNAT rules before adding the current desired rules.
+	if portStart == 0 && portEnd == 0 {
+		if err := n.removeStaleAddressRules(edgeIP); err != nil {
+			return fmt.Errorf("reconcile route address %s: %w", edgeIP, err)
+		}
+	}
 	for _, rule := range rules {
 		n.conn.AddRule(rule)
 	}
@@ -375,6 +383,56 @@ func (n *NFT) removeLeaseRules(leaseID string, wanted []*nftables.Rule) error {
 		}
 	}
 	return nil
+}
+
+// removeStaleAddressRules cleans previous full-address DNAT allocations,
+// including rules tagged with an older lease ID and legacy untagged rules.
+// It only inspects this agent's dedicated wraplink prerouting chain.
+func (n *NFT) removeStaleAddressRules(address net.IP) error {
+	installed, err := n.conn.GetRules(n.table, n.chain)
+	if err != nil {
+		return fmt.Errorf("list nftables rules: %w", err)
+	}
+	removed := 0
+	for _, candidate := range installed {
+		if candidate.Handle == 0 || !isRouteDNATForAddress(candidate, address) {
+			continue
+		}
+		if err := n.conn.DelRule(candidate); err != nil {
+			return fmt.Errorf("delete old address rule handle %d: %w", candidate.Handle, err)
+		}
+		removed++
+	}
+	if removed > 0 {
+		if err := n.conn.Flush(); err != nil {
+			return fmt.Errorf("flush old address rules: %w", err)
+		}
+	}
+	return nil
+}
+
+// isRouteDNATForAddress matches the IPv4 destination comparison followed
+// by a destination NAT action, without relying on the changing origin IP.
+func isRouteDNATForAddress(rule *nftables.Rule, address net.IP) bool {
+	if rule == nil || address.To4() == nil {
+		return false
+	}
+	matchedAddress, matchedNAT := false, false
+	for i, expression := range rule.Exprs {
+		if payload, ok := expression.(*expr.Payload); ok &&
+			payload.Base == expr.PayloadBaseNetworkHeader &&
+			payload.Offset == 16 && payload.Len == 4 && i+1 < len(rule.Exprs) {
+			if comparison, ok := rule.Exprs[i+1].(*expr.Cmp); ok &&
+				comparison.Op == expr.CmpOpEq &&
+				bytes.Equal(comparison.Data, address.To4()) {
+				matchedAddress = true
+			}
+		}
+		if nat, ok := expression.(*expr.NAT); ok && nat.Type == expr.NATTypeDestNAT {
+			matchedNAT = true
+		}
+	}
+	return matchedAddress && matchedNAT
 }
 
 // recoverRouteHandles reconciles in-memory rules with kernel-assigned handles.
