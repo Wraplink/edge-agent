@@ -27,12 +27,12 @@ const (
 type NFT struct {
 	mu sync.Mutex
 
-	conn        *nftables.Conn
-	table       *nftables.Table
-	chain       *nftables.Chain
+	conn               *nftables.Conn
+	table              *nftables.Table
+	chain              *nftables.Chain
 	outputChain        *nftables.Chain
 	localOutputEnabled bool
-	entitledSet *nftables.Set
+	entitledSet        *nftables.Set
 
 	accessConfigured bool
 	accessEnforced   bool
@@ -90,7 +90,7 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 		outputChain:        outputChain,
 		localOutputEnabled: enabled,
 		entitledSet:        entitledSet,
-		routes:      make(map[string]*routeState),
+		routes:             make(map[string]*routeState),
 	}, nil
 }
 
