@@ -49,9 +49,9 @@ type CapacityConfig struct {
 }
 
 type EdgeConfig struct {
-	Addresses   []string  `yaml:"addresses"`
-	UpstreamDNS []string  `yaml:"upstream_dns"`
-	SNI             SNIConfig `yaml:"sni"`
+	Addresses        []string  `yaml:"addresses"`
+	UpstreamDNS      []string  `yaml:"upstream_dns"`
+	SNI              SNIConfig `yaml:"sni"`
 	LocalOutputDNAT bool      `yaml:"local_output_dnat"`
 }
 
