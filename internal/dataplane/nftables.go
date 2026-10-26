@@ -2,6 +2,8 @@ package dataplane
 
 import (
 	"context"
+	"bytes"
+	"reflect"
 	"fmt"
 	"net"
 	"sync"
@@ -278,6 +280,7 @@ func (n *NFT) AddRoute(
 			Table: n.table,
 			Chain: n.chain,
 			Exprs: exprs,
+			UserData: []byte("wraplink:lease:" + lease.ID + ":" + protocolName),
 		}
 
 		n.conn.AddRule(rule)
@@ -285,6 +288,10 @@ func (n *NFT) AddRoute(
 	}
 	if err := n.conn.Flush(); err != nil {
 		return fmt.Errorf("add route %s: %w", lease.ID, err)
+	}
+
+	if err := n.recoverRouteHandles(lease.ID, rules); err != nil {
+		return fmt.Errorf("recover added route handles %s: %w", lease.ID, err)
 	}
 
 	n.routes[lease.ID] = &routeState{
@@ -310,6 +317,10 @@ func (n *NFT) RemoveRoute(
 		return nil
 	}
 
+	if err := n.recoverRouteHandles(lease.ID, state.rules); err != nil {
+		return fmt.Errorf("recover route handles %s: %w", lease.ID, err)
+	}
+
 	for _, rule := range state.rules {
 		if rule == nil || rule.Handle == 0 {
 			return fmt.Errorf("route %s has no rule handle", lease.ID)
@@ -324,6 +335,41 @@ func (n *NFT) RemoveRoute(
 	}
 
 	delete(n.routes, lease.ID)
+	return nil
+}
+
+// recoverRouteHandles reconciles in-memory rules with kernel-assigned handles.
+// Older rules have no lease metadata, so they are only recovered when the full
+// expression sequence uniquely matches the rule we originally installed.
+func (n *NFT) recoverRouteHandles(leaseID string, rules []*nftables.Rule) error {
+	installed, err := n.conn.GetRules(n.table, n.chain)
+	if err != nil {
+		return fmt.Errorf("list nftables route rules: %w", err)
+	}
+	used := make(map[uint64]bool)
+	for _, wanted := range rules {
+		if wanted == nil {
+			return fmt.Errorf("route %s has nil rule", leaseID)
+		}
+		var match *nftables.Rule
+		for _, candidate := range installed {
+			if candidate.Handle == 0 || used[candidate.Handle] {
+				continue
+			}
+			if len(wanted.UserData) > 0 && bytes.Equal(wanted.UserData, candidate.UserData) ||
+				len(wanted.UserData) == 0 && len(candidate.UserData) == 0 && reflect.DeepEqual(wanted.Exprs, candidate.Exprs) {
+				if match != nil {
+					return fmt.Errorf("ambiguous nftables rule for lease %s", leaseID)
+				}
+				match = candidate
+			}
+		}
+		if match == nil {
+			return fmt.Errorf("nftables rule for lease %s not found", leaseID)
+		}
+		wanted.Handle = match.Handle
+		used[match.Handle] = true
+	}
 	return nil
 }
 
