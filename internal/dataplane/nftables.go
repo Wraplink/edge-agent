@@ -475,7 +475,7 @@ func (n *NFT) removeGuardRules(leaseID string) error {
 		}
 		removed := false
 		for _, rule := range installed {
-			if rule.Handle != 0 && bytes.Equal(rule.UserData, []byte("wraplink:guard:" + leaseID)) {
+			if rule.Handle != 0 && bytes.Equal(rule.UserData, []byte("wraplink:guard:"+leaseID)) {
 				if err := n.conn.DelRule(rule); err != nil {
 					return err
 				}
