@@ -173,11 +173,11 @@ func (n *NFT) AddRoute(
 			return fmt.Errorf("replace changed route %s: %w", lease.ID, err)
 		}
 		if n.localOutputEnabled {
-	if err := n.removeOutputLeaseRules(lease.ID, state.outputRules); err != nil {
-			return fmt.Errorf("replace changed output route %s: %w", lease.ID, err)
+			if err := n.removeOutputLeaseRules(lease.ID, state.outputRules); err != nil {
+				return fmt.Errorf("replace changed output route %s: %w", lease.ID, err)
+			}
 		}
-		}
-	delete(n.routes, lease.ID)
+		delete(n.routes, lease.ID)
 	}
 
 	edgeIP := net.ParseIP(lease.Address).To4()
@@ -335,14 +335,14 @@ func (n *NFT) AddRoute(
 		})
 	}
 	if n.localOutputEnabled {
-	if err := n.removeOutputLeaseRules(lease.ID, outputRules); err != nil {
-		return fmt.Errorf("reconcile output route %s: %w", lease.ID, err)
-	}
-	if portStart == 0 && portEnd == 0 {
-		if err := n.removeStaleOutputAddressRules(edgeIP); err != nil {
-			return fmt.Errorf("reconcile output address %s: %w", edgeIP, err)
+		if err := n.removeOutputLeaseRules(lease.ID, outputRules); err != nil {
+			return fmt.Errorf("reconcile output route %s: %w", lease.ID, err)
 		}
-	}
+		if portStart == 0 && portEnd == 0 {
+			if err := n.removeStaleOutputAddressRules(edgeIP); err != nil {
+				return fmt.Errorf("reconcile output address %s: %w", edgeIP, err)
+			}
+		}
 	}
 	for _, rule := range rules {
 		n.conn.AddRule(rule)
@@ -361,9 +361,9 @@ func (n *NFT) AddRoute(
 	}
 
 	if n.localOutputEnabled {
-	if err := n.recoverOutputRouteHandles(lease.ID, outputRules); err != nil {
-		return fmt.Errorf("recover output route handles %s: %w", lease.ID, err)
-	}
+		if err := n.recoverOutputRouteHandles(lease.ID, outputRules); err != nil {
+			return fmt.Errorf("recover output route handles %s: %w", lease.ID, err)
+		}
 	}
 	n.routes[lease.ID] = &routeState{
 		lease:       lease,
@@ -399,8 +399,10 @@ func (n *NFT) RemoveRoute(
 		return fmt.Errorf("delete route %s: %w", lease.ID, err)
 	}
 
-	if err := n.removeOutputLeaseRules(lease.ID, state.outputRules); err != nil {
-		return err
+	if n.localOutputEnabled {
+		if err := n.removeOutputLeaseRules(lease.ID, state.outputRules); err != nil {
+			return err
+		}
 	}
 	delete(n.routes, lease.ID)
 	return nil
