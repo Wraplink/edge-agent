@@ -62,10 +62,10 @@ func NewNFT() (*NFT, error) {
 	})
 
 	outputChain := conn.AddChain(&nftables.Chain{
-		Table: table,
-		Name: outputChainName,
-		Type: nftables.ChainTypeNAT,
-		Hooknum: nftables.ChainHookOutput,
+		Table:    table,
+		Name:     outputChainName,
+		Type:     nftables.ChainTypeNAT,
+		Hooknum:  nftables.ChainHookOutput,
 		Priority: nftables.ChainPriorityNATDest,
 	})
 	entitledSet := &nftables.Set{
@@ -323,8 +323,10 @@ func (n *NFT) AddRoute(
 	outputRules := make([]*nftables.Rule, 0, len(rules))
 	for _, rule := range rules {
 		outputRules = append(outputRules, &nftables.Rule{
-			Table: n.table, Chain: n.outputChain,
-			Exprs: rule.Exprs, UserData: rule.UserData,
+			Table:    n.table,
+			Chain:    n.outputChain,
+			Exprs:    rule.Exprs,
+			UserData: rule.UserData,
 		})
 	}
 	if err := n.removeOutputLeaseRules(lease.ID, outputRules); err != nil {
@@ -374,14 +376,18 @@ func (n *NFT) RemoveRoute(
 	state, exists := n.routes[lease.ID]
 	if !exists {
 		// Remove orphaned tagged rules left by a previous process.
-		if err := n.removeLeaseRules(lease.ID, nil); err != nil { return err }
+		if err := n.removeLeaseRules(lease.ID, nil); err != nil {
+			return err
+		}
 		return n.removeOutputLeaseRules(lease.ID, nil)
 	}
 	if err := n.removeLeaseRules(lease.ID, state.rules); err != nil {
 		return fmt.Errorf("delete route %s: %w", lease.ID, err)
 	}
 
-	if err := n.removeOutputLeaseRules(lease.ID, state.outputRules); err != nil { return err }
+	if err := n.removeOutputLeaseRules(lease.ID, state.outputRules); err != nil {
+		return err
+	}
 	delete(n.routes, lease.ID)
 	return nil
 }
@@ -478,49 +484,74 @@ func isRouteDNATForAddress(rule *nftables.Rule, address net.IP) bool {
 // removeOutputLeaseRules reconciles the local NAT chain using the same lease tags.
 func (n *NFT) removeOutputLeaseRules(leaseID string, wanted []*nftables.Rule) error {
 	installed, err := n.conn.GetRules(n.table, n.outputChain)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	prefix := []byte("wraplink:lease:" + leaseID + ":")
 	removed := 0
 	for _, candidate := range installed {
 		owned := bytes.HasPrefix(candidate.UserData, prefix)
 		if !owned && len(candidate.UserData) == 0 {
 			for _, rule := range wanted {
-				if reflect.DeepEqual(rule.Exprs, candidate.Exprs) { owned = true; break }
+				if reflect.DeepEqual(rule.Exprs, candidate.Exprs) {
+					owned = true
+					break
+				}
 			}
 		}
-		if !owned || candidate.Handle == 0 { continue }
-		if err := n.conn.DelRule(candidate); err != nil { return err }
+		if !owned || candidate.Handle == 0 {
+			continue
+		}
+		if err := n.conn.DelRule(candidate); err != nil {
+			return err
+		}
 		removed++
 	}
-	if removed > 0 { return n.conn.Flush() }
+	if removed > 0 {
+		return n.conn.Flush()
+	}
 	return nil
 }
 
 func (n *NFT) removeStaleOutputAddressRules(address net.IP) error {
 	installed, err := n.conn.GetRules(n.table, n.outputChain)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	removed := 0
 	for _, rule := range installed {
-		if rule.Handle == 0 || !isRouteDNATForAddress(rule, address) { continue }
-		if err := n.conn.DelRule(rule); err != nil { return err }
+		if rule.Handle == 0 || !isRouteDNATForAddress(rule, address) {
+			continue
+		}
+		if err := n.conn.DelRule(rule); err != nil {
+			return err
+		}
 		removed++
 	}
-	if removed > 0 { return n.conn.Flush() }
+	if removed > 0 {
+		return n.conn.Flush()
+	}
 	return nil
 }
 
 func (n *NFT) recoverOutputRouteHandles(leaseID string, rules []*nftables.Rule) error {
 	installed, err := n.conn.GetRules(n.table, n.outputChain)
-	if err != nil { return err }
+	if err != nil {
+		return err
+	}
 	for _, wanted := range rules {
 		var match *nftables.Rule
 		for _, candidate := range installed {
 			if bytes.Equal(wanted.UserData, candidate.UserData) {
-				if match != nil { return fmt.Errorf("ambiguous output rule for lease %s", leaseID) }
+				if match != nil {
+					return fmt.Errorf("ambiguous output rule for lease %s", leaseID)
+				}
 				match = candidate
 			}
 		}
-		if match == nil { return fmt.Errorf("missing output rule for lease %s", leaseID) }
+		if match == nil {
+			return fmt.Errorf("missing output rule for lease %s", leaseID)
+		}
 		wanted.Handle = match.Handle
 	}
 	return nil
