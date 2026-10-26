@@ -21,7 +21,7 @@ func TestManagerApplyIgnoresNonRouteLease(t *testing.T) {
 func TestManagerApplyRejectsInvalidRouteBeforeNFT(t *testing.T) {
 	manager := &Manager{active: make(map[string]client.Lease)}
 	tests := []struct {
-		name string
+		name  string
 		lease client.Lease
 	}{
 		{name: "missing id", lease: client.Lease{Type: "route"}},
@@ -41,11 +41,11 @@ func TestManagerApplyRejectsInvalidRouteBeforeNFT(t *testing.T) {
 
 func TestManagerApplyIdenticalActiveLeaseSkipsNFT(t *testing.T) {
 	lease := client.Lease{
-		ID: "lease",
-		Type: "route",
-		Address: "192.0.2.1",
+		ID:            "lease",
+		Type:          "route",
+		Address:       "192.0.2.1",
 		DestinationIP: "198.51.100.1",
-		Protocol: "tcp",
+		Protocol:       "tcp",
 	}
 	manager := &Manager{active: map[string]client.Lease{lease.ID: lease}}
 	if err := manager.Apply(context.Background(), lease); err != nil {
@@ -55,11 +55,11 @@ func TestManagerApplyIdenticalActiveLeaseSkipsNFT(t *testing.T) {
 
 func TestManagerApplyChangedActiveLeaseReachesNFT(t *testing.T) {
 	previous := client.Lease{
-		ID: "lease",
-		Type: "route",
-		Address: "192.0.2.1",
+		ID:            "lease",
+		Type:          "route",
+		Address:       "192.0.2.1",
 		DestinationIP: "198.51.100.1",
-		Protocol: "tcp",
+		Protocol:       "tcp",
 	}
 	changed := previous
 	changed.DestinationIP = "198.51.100.2"
