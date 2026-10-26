@@ -18,10 +18,12 @@ import (
 )
 
 const (
-	tableName       = "wraplink"
-	chainName       = "prerouting"
-	outputChainName = "output"
-	entitledSetName = "entitled_v4"
+	tableName           = "wraplink"
+	chainName           = "prerouting"
+	outputChainName     = "output"
+	guardPreroutingName = "guard_prerouting"
+	guardOutputName     = "guard_output"
+	entitledSetName     = "entitled_v4"
 )
 
 type NFT struct {
@@ -31,6 +33,8 @@ type NFT struct {
 	table              *nftables.Table
 	chain              *nftables.Chain
 	outputChain        *nftables.Chain
+	guardPrerouting    *nftables.Chain
+	guardOutput        *nftables.Chain
 	localOutputEnabled bool
 	entitledSet        *nftables.Set
 
@@ -70,6 +74,20 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 		Hooknum:  nftables.ChainHookOutput,
 		Priority: nftables.ChainPriorityNATDest,
 	})
+	guardPrerouting := conn.AddChain(&nftables.Chain{
+		Table:    table,
+		Name:     guardPreroutingName,
+		Type:     nftables.ChainTypeFilter,
+		Hooknum:  nftables.ChainHookPrerouting,
+		Priority: nftables.ChainPriorityRaw,
+	})
+	guardOutput := conn.AddChain(&nftables.Chain{
+		Table:    table,
+		Name:     guardOutputName,
+		Type:     nftables.ChainTypeFilter,
+		Hooknum:  nftables.ChainHookOutput,
+		Priority: nftables.ChainPriorityRaw,
+	})
 	entitledSet := &nftables.Set{
 		Table:   table,
 		Name:    entitledSetName,
@@ -88,6 +106,8 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 		table:              table,
 		chain:              chain,
 		outputChain:        outputChain,
+		guardPrerouting:    guardPrerouting,
+		guardOutput:        guardOutput,
 		localOutputEnabled: enabled,
 		entitledSet:        entitledSet,
 		routes:             make(map[string]*routeState),
@@ -176,6 +196,9 @@ func (n *NFT) AddRoute(
 			if err := n.removeOutputLeaseRules(lease.ID, state.outputRules); err != nil {
 				return fmt.Errorf("replace changed output route %s: %w", lease.ID, err)
 			}
+		}
+		if err := n.removeGuardRules(lease.ID); err != nil {
+			return fmt.Errorf("remove previous route guards: %w", err)
 		}
 		delete(n.routes, lease.ID)
 	}
@@ -344,6 +367,12 @@ func (n *NFT) AddRoute(
 			}
 		}
 	}
+	if err := n.removeGuardRules(lease.ID); err != nil {
+		return fmt.Errorf("reconcile guards: %w", err)
+	}
+	for _, guard := range n.makeGuardRules(lease.ID, edgeIP) {
+		n.conn.AddRule(guard)
+	}
 	for _, rule := range rules {
 		n.conn.AddRule(rule)
 	}
@@ -391,9 +420,11 @@ func (n *NFT) RemoveRoute(
 			return err
 		}
 		if n.localOutputEnabled {
-			return n.removeOutputLeaseRules(lease.ID, nil)
+			if err := n.removeOutputLeaseRules(lease.ID, nil); err != nil {
+				return err
+			}
 		}
-		return nil
+		return n.removeGuardRules(lease.ID)
 	}
 	if err := n.removeLeaseRules(lease.ID, state.rules); err != nil {
 		return fmt.Errorf("delete route %s: %w", lease.ID, err)
@@ -404,7 +435,59 @@ func (n *NFT) RemoveRoute(
 			return err
 		}
 	}
+	if err := n.removeGuardRules(lease.ID); err != nil {
+		return err
+	}
 	delete(n.routes, lease.ID)
+	return nil
+}
+
+// makeGuardRules installs fail-closed filtering before NAT/conntrack. An
+// unauthorized source is dropped even when no DNAT rule matches. Both local
+// OUTPUT and remote PREROUTING paths are protected.
+func (n *NFT) makeGuardRules(leaseID string, address net.IP) []*nftables.Rule {
+	makeRule := func(chain *nftables.Chain) *nftables.Rule {
+		return &nftables.Rule{
+			Table:    n.table,
+			Chain:    chain,
+			UserData: []byte("wraplink:guard:" + leaseID),
+			Exprs: []expr.Any{
+				&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
+				&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: address.To4()},
+				&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 12, Len: 4},
+				&expr.Lookup{SourceRegister: 1, SetName: n.entitledSet.Name, SetID: n.entitledSet.ID, Invert: true},
+				&expr.Verdict{Kind: expr.VerdictDrop},
+			},
+		}
+	}
+	guards := []*nftables.Rule{makeRule(n.guardPrerouting)}
+	if n.localOutputEnabled {
+		guards = append(guards, makeRule(n.guardOutput))
+	}
+	return guards
+}
+
+func (n *NFT) removeGuardRules(leaseID string) error {
+	for _, chain := range []*nftables.Chain{n.guardPrerouting, n.guardOutput} {
+		installed, err := n.conn.GetRules(n.table, chain)
+		if err != nil {
+			return fmt.Errorf("list guard rules: %w", err)
+		}
+		removed := false
+		for _, rule := range installed {
+			if rule.Handle != 0 && bytes.Equal(rule.UserData, []byte("wraplink:guard:"+leaseID)) {
+				if err := n.conn.DelRule(rule); err != nil {
+					return err
+				}
+				removed = true
+			}
+		}
+		if removed {
+			if err := n.conn.Flush(); err != nil {
+				return err
+			}
+		}
+	}
 	return nil
 }
 
