@@ -40,8 +40,8 @@ type NFT struct {
 }
 
 type routeState struct {
-	lease client.Lease
-	rules []*nftables.Rule
+	lease       client.Lease
+	rules       []*nftables.Rule
 	outputRules []*nftables.Rule
 }
 
@@ -355,8 +355,8 @@ func (n *NFT) AddRoute(
 		return fmt.Errorf("recover output route handles %s: %w", lease.ID, err)
 	}
 	n.routes[lease.ID] = &routeState{
-		lease: lease,
-		rules: rules,
+		lease:       lease,
+		rules:       rules,
 		outputRules: outputRules,
 	}
 	return nil
