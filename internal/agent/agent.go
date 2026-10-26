@@ -344,6 +344,11 @@ func (a *Agent) processSNILease(ctx context.Context, lease client.Lease) error {
 }
 
 func (a *Agent) processRouteLease(ctx context.Context, lease client.Lease) error {
+	// A versioned route is bound to one specific public IP by the backend.
+	// Never fall back to the legacy hash allocator if that IP is missing.
+	if lease.Generation > 0 && lease.Address == "" {
+		return fmt.Errorf("route lease %s generation %d is missing its assigned public IP", lease.ID, lease.Generation)
+	}
 	if a.countActive(TypeRoute) >= a.routeCapacity {
 		return fmt.Errorf("route capacity exhausted")
 	}
