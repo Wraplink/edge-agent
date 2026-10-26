@@ -45,7 +45,7 @@ func TestManagerApplyIdenticalActiveLeaseSkipsNFT(t *testing.T) {
 		Type:          "route",
 		Address:       "192.0.2.1",
 		DestinationIP: "198.51.100.1",
-		Protocol:       "tcp",
+		Protocol:      "tcp",
 	}
 	manager := &Manager{active: map[string]client.Lease{lease.ID: lease}}
 	if err := manager.Apply(context.Background(), lease); err != nil {
@@ -59,7 +59,7 @@ func TestManagerApplyChangedActiveLeaseReachesNFT(t *testing.T) {
 		Type:          "route",
 		Address:       "192.0.2.1",
 		DestinationIP: "198.51.100.1",
-		Protocol:       "tcp",
+		Protocol:      "tcp",
 	}
 	changed := previous
 	changed.DestinationIP = "198.51.100.2"
