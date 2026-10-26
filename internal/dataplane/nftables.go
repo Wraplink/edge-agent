@@ -1,8 +1,8 @@
 package dataplane
 
 import (
-	"context"
 	"bytes"
+	"context"
 	"reflect"
 	"fmt"
 	"net"
@@ -356,8 +356,9 @@ func (n *NFT) recoverRouteHandles(leaseID string, rules []*nftables.Rule) error 
 			if candidate.Handle == 0 || used[candidate.Handle] {
 				continue
 			}
-			if (len(wanted.UserData) > 0 && bytes.Equal(wanted.UserData, candidate.UserData)) ||
-			(len(candidate.UserData) == 0 && reflect.DeepEqual(wanted.Exprs, candidate.Exprs)) {
+			taggedMatch := len(wanted.UserData) > 0 && bytes.Equal(wanted.UserData, candidate.UserData)
+			legacyMatch := len(candidate.UserData) == 0 && reflect.DeepEqual(wanted.Exprs, candidate.Exprs)
+			if taggedMatch || legacyMatch {
 				if match != nil {
 					return fmt.Errorf("ambiguous nftables rule for lease %s", leaseID)
 				}
