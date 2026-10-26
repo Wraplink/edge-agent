@@ -19,6 +19,8 @@ agent:
     route: 1000
 
 edge:
+  # Enable local host Full Route forwarding (default: false).
+  local_output_dnat: false
   # Independent DNS for original SNI destinations; never point to WrapLink DNS Control.
   upstream_dns:
     - "1.1.1.1:53"
