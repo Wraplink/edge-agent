@@ -75,12 +75,18 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 		Priority: nftables.ChainPriorityNATDest,
 	})
 	guardPrerouting := conn.AddChain(&nftables.Chain{
-		Table: table, Name: guardPreroutingName, Type: nftables.ChainTypeFilter,
-		Hooknum: nftables.ChainHookPrerouting, Priority: nftables.ChainPriorityRaw,
+		Table:    table,
+		Name:     guardPreroutingName,
+		Type:     nftables.ChainTypeFilter,
+		Hooknum:  nftables.ChainHookPrerouting,
+		Priority: nftables.ChainPriorityRaw,
 	})
 	guardOutput := conn.AddChain(&nftables.Chain{
-		Table: table, Name: guardOutputName, Type: nftables.ChainTypeFilter,
-		Hooknum: nftables.ChainHookOutput, Priority: nftables.ChainPriorityRaw,
+		Table:    table,
+		Name:     guardOutputName,
+		Type:     nftables.ChainTypeFilter,
+		Hooknum:  nftables.ChainHookOutput,
+		Priority: nftables.ChainPriorityRaw,
 	})
 	entitledSet := &nftables.Set{
 		Table:   table,
@@ -442,7 +448,8 @@ func (n *NFT) RemoveRoute(
 func (n *NFT) makeGuardRules(leaseID string, address net.IP) []*nftables.Rule {
 	makeRule := func(chain *nftables.Chain) *nftables.Rule {
 		return &nftables.Rule{
-			Table: n.table, Chain: chain,
+			Table:    n.table,
+			Chain:    chain,
 			UserData: []byte("wraplink:guard:" + leaseID),
 			Exprs: []expr.Any{
 				&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 16, Len: 4},
@@ -450,7 +457,8 @@ func (n *NFT) makeGuardRules(leaseID string, address net.IP) []*nftables.Rule {
 				&expr.Payload{DestRegister: 1, Base: expr.PayloadBaseNetworkHeader, Offset: 12, Len: 4},
 				&expr.Lookup{SourceRegister: 1, SetName: n.entitledSet.Name, SetID: n.entitledSet.ID, Invert: true},
 				&expr.Verdict{Kind: expr.VerdictDrop},
-			}}
+			},
+		}
 	}
 	guards := []*nftables.Rule{makeRule(n.guardPrerouting)}
 	if n.localOutputEnabled {
