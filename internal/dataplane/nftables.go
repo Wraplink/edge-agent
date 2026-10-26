@@ -277,9 +277,9 @@ func (n *NFT) AddRoute(
 		exprs = append(exprs, nat)
 
 		rule := &nftables.Rule{
-			Table: n.table,
-			Chain: n.chain,
-			Exprs: exprs,
+			Table:    n.table,
+			Chain:    n.chain,
+			Exprs:    exprs,
 			UserData: []byte("wraplink:lease:" + lease.ID + ":" + protocolName),
 		}
 
