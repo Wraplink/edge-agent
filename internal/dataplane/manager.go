@@ -3,6 +3,7 @@ package dataplane
 import (
 	"context"
 	"fmt"
+	"reflect"
 	"sync"
 
 	"github.com/wraplink/edge-agent/internal/client"
@@ -93,7 +94,7 @@ func (m *Manager) Apply(
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
-	if _, exists := m.active[lease.ID]; exists {
+	if previous, exists := m.active[lease.ID]; exists && reflect.DeepEqual(previous, lease) {
 		return nil
 	}
 
