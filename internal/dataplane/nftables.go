@@ -91,7 +91,7 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 	entitledSet := &nftables.Set{
 		Table:   table,
 		Name:    entitledSetName,
-		KeyType: nftables.TypeIPAddr,
+		KeyType:    nftables.TypeIPAddr,
 		HasTimeout: true,
 	}
 	if err := conn.AddSet(entitledSet, nil); err != nil {
@@ -142,7 +142,7 @@ func (n *NFT) ReplaceAllowedSources(
 	elements := make([]nftables.SetElement, 0, len(latest))
 	for address, expiry := range latest {
 		elements = append(elements, nftables.SetElement{
-			Key: net.ParseIP(address).To4(),
+			Key:     net.ParseIP(address).To4(),
 			Timeout: expiry.Sub(now),
 		})
 	}
