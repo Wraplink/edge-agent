@@ -40,7 +40,7 @@ func TestEntitlementElements(t *testing.T) {
 
 func TestEntitlementElementsRejectsInvalidIP(t *testing.T) {
 	_, err := entitlementElements([]client.AccessGrant{{
-		ClientIP: "not-an-ip",
+		ClientIP:  "not-an-ip",
 		ExpiresAt: time.Now().Add(time.Hour),
 	}}, time.Now())
 	if err == nil {
