@@ -8,9 +8,9 @@ command -v nft >/dev/null || { echo "nft is required" >&2; exit 1; }
 command -v go >/dev/null || { echo "go is required" >&2; exit 1; }
 
 cd "$(dirname "$0")/.."
-exec unshare --net --fork -- bash -c '
+exec unshare --net --mount --fork -- bash -c '
   set -euo pipefail
   ip link set lo up
   export WRAPLINK_KERNEL_TEST=1
-  go test -count=1 -run "^TestKernel(EntitlementExpiresWithoutRefresh|RestartRevokesStaleEntitlements|EstablishedUDPRevocation|EstablishedTCPRevocation)$" -v ./internal/dataplane
+  go test -count=1 -run "^TestKernel(EntitlementExpiresWithoutRefresh|RestartRevokesStaleEntitlements|EstablishedUDPRevocation|EstablishedTCPRevocation|PreroutingUDPRevocation)$" -v ./internal/dataplane
 '
