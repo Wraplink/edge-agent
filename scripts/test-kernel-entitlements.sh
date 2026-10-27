@@ -12,5 +12,5 @@ exec unshare --net --fork -- bash -c '
   set -euo pipefail
   ip link set lo up
   export WRAPLINK_KERNEL_TEST=1
-  go test -count=1 -run "^TestKernel(EntitlementExpiresWithoutRefresh|RestartRevokesStaleEntitlements)$" -v ./internal/dataplane
+  go test -count=1 -run "^TestKernel(EntitlementExpiresWithoutRefresh|RestartRevokesStaleEntitlements|EstablishedUDPRevocation)$" -v ./internal/dataplane
 '
