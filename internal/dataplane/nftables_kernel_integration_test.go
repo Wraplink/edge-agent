@@ -75,3 +75,38 @@ func TestKernelEntitlementExpiresWithoutRefresh(t *testing.T) {
 	}
 	t.Fatal(errors.New("kernel retained expired entitlement without refresh"))
 }
+
+func TestKernelRestartRevokesStaleEntitlements(t *testing.T) {
+	if os.Getenv("WRAPLINK_KERNEL_TEST") != "1" {
+		t.Skip("requires WRAPLINK_KERNEL_TEST=1 in an isolated network namespace")
+	}
+	if os.Geteuid() != 0 {
+		t.Skip("requires root or appropriate netlink capabilities")
+	}
+	ctx := context.Background()
+	first, err := NewNFT()
+	if err != nil {
+		t.Fatalf("initialize first agent dataplane: %v", err)
+	}
+	if err := first.ReplaceAllowedSources(ctx, true, []client.AccessGrant{{
+		ClientIP:  "192.0.2.52",
+		ExpiresAt: time.Now().Add(time.Hour),
+	}}); err != nil {
+		t.Fatalf("install first agent entitlement: %v", err)
+	}
+	// Recreate the dataplane in the same namespace, as an agent restart would.
+	second, err := NewNFT()
+	if err != nil {
+		t.Fatalf("restart dataplane with existing kernel state: %v", err)
+	}
+	if err := second.ReplaceAllowedSources(ctx, true, nil); err != nil {
+		t.Fatalf("reconcile empty entitlements after restart: %v", err)
+	}
+	elements, err := second.conn.GetSetElements(second.entitledSet)
+	if err != nil {
+		t.Fatalf("inspect restarted entitlement set: %v", err)
+	}
+	if len(elements) != 0 {
+		t.Fatalf("restart retained %d unauthorized entitlement(s)", len(elements))
+	}
+}
