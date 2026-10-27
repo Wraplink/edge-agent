@@ -89,9 +89,10 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 		Priority: nftables.ChainPriorityRaw,
 	})
 	entitledSet := &nftables.Set{
-		Table:   table,
-		Name:    entitledSetName,
-		KeyType: nftables.TypeIPAddr,
+		Table:      table,
+		Name:       entitledSetName,
+		KeyType:    nftables.TypeIPAddr,
+		HasTimeout: true,
 	}
 	if err := conn.AddSet(entitledSet, nil); err != nil {
 		return nil, fmt.Errorf("create entitled IPv4 set: %w", err)
@@ -123,26 +124,27 @@ func (n *NFT) ReplaceAllowedSources(
 		return err
 	}
 
-	elements := make([]nftables.SetElement, 0, len(grants))
-	seen := make(map[string]struct{}, len(grants))
+	now := time.Now().UTC()
+	latest := make(map[string]time.Time, len(grants))
 	for _, grant := range grants {
 		parsed := net.ParseIP(grant.ClientIP)
-		if parsed == nil {
+		if parsed == nil || parsed.To4() == nil {
 			return fmt.Errorf("invalid entitled client IPv4 %q", grant.ClientIP)
 		}
-		ip := parsed.To4()
-		if ip == nil {
-			return fmt.Errorf("invalid entitled client IPv4 %q", grant.ClientIP)
-		}
-		if !grant.ExpiresAt.After(time.Now().UTC()) {
+		if !grant.ExpiresAt.After(now) {
 			continue
 		}
-		key := ip.String()
-		if _, exists := seen[key]; exists {
-			continue
+		key := parsed.To4().String()
+		if grant.ExpiresAt.After(latest[key]) {
+			latest[key] = grant.ExpiresAt
 		}
-		seen[key] = struct{}{}
-		elements = append(elements, nftables.SetElement{Key: []byte(ip)})
+	}
+	elements := make([]nftables.SetElement, 0, len(latest))
+	for address, expiry := range latest {
+		elements = append(elements, nftables.SetElement{
+			Key:     net.ParseIP(address).To4(),
+			Timeout: expiry.Sub(now),
+		})
 	}
 
 	n.mu.Lock()
