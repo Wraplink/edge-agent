@@ -124,27 +124,9 @@ func (n *NFT) ReplaceAllowedSources(
 		return err
 	}
 
-	now := time.Now().UTC()
-	latest := make(map[string]time.Time, len(grants))
-	for _, grant := range grants {
-		parsed := net.ParseIP(grant.ClientIP)
-		if parsed == nil || parsed.To4() == nil {
-			return fmt.Errorf("invalid entitled client IPv4 %q", grant.ClientIP)
-		}
-		if !grant.ExpiresAt.After(now) {
-			continue
-		}
-		key := parsed.To4().String()
-		if grant.ExpiresAt.After(latest[key]) {
-			latest[key] = grant.ExpiresAt
-		}
-	}
-	elements := make([]nftables.SetElement, 0, len(latest))
-	for address, expiry := range latest {
-		elements = append(elements, nftables.SetElement{
-			Key:     net.ParseIP(address).To4(),
-			Timeout: expiry.Sub(now),
-		})
+	elements, err := entitlementElements(grants, time.Now().UTC())
+	if err != nil {
+		return err
 	}
 
 	n.mu.Lock()
@@ -167,6 +149,33 @@ func (n *NFT) ReplaceAllowedSources(
 	n.accessConfigured = true
 	n.accessEnforced = enforced
 	return nil
+}
+
+// entitlementElements calculates kernel-enforced expiration for each unique IPv4 source.
+func entitlementElements(grants []client.AccessGrant, now time.Time) ([]nftables.SetElement, error) {
+	latest := make(map[string]time.Time, len(grants))
+	for _, grant := range grants {
+		parsed := net.ParseIP(grant.ClientIP)
+		if parsed == nil || parsed.To4() == nil {
+			return nil, fmt.Errorf("invalid entitled client IPv4 %q", grant.ClientIP)
+		}
+		if !grant.ExpiresAt.After(now) {
+			continue
+		}
+		key := parsed.To4().String()
+		if grant.ExpiresAt.After(latest[key]) {
+			latest[key] = grant.ExpiresAt
+		}
+	}
+	elements := make([]nftables.SetElement, 0, len(latest))
+	for address, expiry := range latest {
+		elements = append(elements, nftables.SetElement{
+			Key:     net.ParseIP(address).To4(),
+			Timeout: expiry.Sub(now),
+		})
+	}
+
+	return elements, nil
 }
 
 func (n *NFT) AddRoute(
