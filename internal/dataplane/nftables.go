@@ -89,8 +89,8 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 		Priority: nftables.ChainPriorityRaw,
 	})
 	entitledSet := &nftables.Set{
-		Table:   table,
-		Name:    entitledSetName,
+		Table:      table,
+		Name:       entitledSetName,
 		KeyType:    nftables.TypeIPAddr,
 		HasTimeout: true,
 	}
