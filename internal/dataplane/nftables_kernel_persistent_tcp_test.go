@@ -140,12 +140,10 @@ func TestKernelPreroutingEstablishedTCPRevocation(t *testing.T) {
 			if err != nil {
 				t.Fatalf("peer send: %v", err)
 			}
-			switch strings.TrimSpace(line) {
-			case "SENT", "WRITE_FAILED":
-				goto sent
+			if status := strings.TrimSpace(line); status == "SENT" || status == "WRITE_FAILED" {
+				break
 			}
 		}
-	sent:
 		if err := receiver.SetReadDeadline(time.Now().Add(750 * time.Millisecond)); err != nil {
 			t.Fatal(err)
 		}
