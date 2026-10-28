@@ -79,8 +79,7 @@ func TestKernelPreroutingEstablishedTCPRevocation(t *testing.T) {
 	}
 	ctx := context.Background()
 	if err := n.ReplaceAllowedSources(ctx, true, []client.AccessGrant{{
-		ClientIP:  "198.18.0.2",
-		ExpiresAt: time.Now().Add(time.Minute),
+		ClientIP: "198.18.0.2", ExpiresAt: time.Now().Add(time.Minute),
 	}}); err != nil {
 		t.Fatal(err)
 	}
