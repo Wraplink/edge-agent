@@ -145,7 +145,7 @@ func TestKernelPreroutingEstablishedTCPRevocation(t *testing.T) {
 				goto sent
 			}
 		}
-	sent:
+sent:
 		if err := receiver.SetReadDeadline(time.Now().Add(750 * time.Millisecond)); err != nil {
 			t.Fatal(err)
 		}
