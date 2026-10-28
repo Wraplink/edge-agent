@@ -78,9 +78,7 @@ func TestKernelPreroutingEstablishedTCPRevocation(t *testing.T) {
 		t.Fatal(err)
 	}
 	ctx := context.Background()
-	if err := n.ReplaceAllowedSources(ctx, true, []client.AccessGrant{{
-		ClientIP: "198.18.0.2", ExpiresAt: time.Now().Add(time.Minute),
-	}}); err != nil {
+	if err := n.ReplaceAllowedSources(ctx, true, []client.AccessGrant{{ClientIP: "198.18.0.2", ExpiresAt: time.Now().Add(time.Minute)}}); err != nil {
 		t.Fatal(err)
 	}
 	lease := client.Lease{ID: "persistent-tcp", Address: "198.18.0.1", DestinationIP: "198.19.0.1", Protocol: "tcp"}
