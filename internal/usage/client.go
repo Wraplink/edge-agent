@@ -15,13 +15,13 @@ import (
 // Report is a single, immutable measurement interval. Sequence must remain
 // stable across retries; the backend must deduplicate by agent and sequence.
 type Report struct {
-	AgentID       string    `json:"agentId"`
-	Sequence      uint64    `json:"sequence"`
-	ClientIP      string    `json:"clientIp"`
-	UploadedBytes uint64    `json:"uploadedBytes"`
+	AgentID         string    `json:"agentId"`
+	Sequence        uint64    `json:"sequence"`
+	ClientIP        string    `json:"clientIp"`
+	UploadedBytes   uint64    `json:"uploadedBytes"`
 	DownloadedBytes uint64  `json:"downloadedBytes"`
-	StartedAt     time.Time `json:"startedAt"`
-	EndedAt       time.Time `json:"endedAt"`
+	StartedAt       time.Time `json:"startedAt"`
+	EndedAt         time.Time `json:"endedAt"`
 }
 
 func (r Report) Validate() error {
@@ -41,8 +41,8 @@ func (r Report) Validate() error {
 // Client submits already persisted usage records. It deliberately does not
 // collect counters or manage retries; callers must use a durable outbox.
 type Client struct {
-	URL string
-	Key string
+	URL  string
+	Key  string
 	HTTP *http.Client
 }
 
