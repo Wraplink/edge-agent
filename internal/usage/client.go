@@ -19,7 +19,7 @@ type Report struct {
 	Sequence        uint64    `json:"sequence"`
 	ClientIP        string    `json:"clientIp"`
 	UploadedBytes   uint64    `json:"uploadedBytes"`
-	DownloadedBytes uint64  `json:"downloadedBytes"`
+	DownloadedBytes uint64    `json:"downloadedBytes"`
 	StartedAt       time.Time `json:"startedAt"`
 	EndedAt         time.Time `json:"endedAt"`
 }
