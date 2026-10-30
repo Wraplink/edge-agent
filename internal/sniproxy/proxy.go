@@ -11,9 +11,21 @@ import (
 	"time"
 )
 
+// SessionUsage records forwarded application bytes, excluding TCP/IP framing.
+// Upload is client-to-upstream; download is upstream-to-client.
+type SessionUsage struct {
+	ClientIP        string
+	UploadedBytes   uint64
+	DownloadedBytes uint64
+}
+
+// UsageObserver receives completed session measurements. Callbacks must not block.
+type UsageObserver func(SessionUsage)
+
 // Proxy forwards TLS streams based on the client's SNI without decrypting TLS.
 // Only explicitly registered destinations are routable.
 type Proxy struct {
+	OnUsage            UsageObserver
 	Access             *Authorizer
 	DialTimeout        time.Duration
 	MaxConnections     int
@@ -219,11 +231,18 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	}
 	defer upstream.Close()
 	_ = raw.SetReadDeadline(time.Time{})
+	meter := &sessionMeter{}
+	defer func() {
+		if p.OnUsage != nil {
+			p.OnUsage(meter.snapshot(host))
+		}
+	}()
 	for len(hello) > 0 {
 		n, err := upstream.Write(hello)
 		if err != nil || n == 0 {
 			return
 		}
+		meter.addUpload(uint64(n))
 		hello = hello[n:]
 	}
 	// Recheck authorization during an established session so expiry and
@@ -253,15 +272,16 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 			}
 		}
 	}()
-	done := make(chan struct{})
+	done := make(chan uint64, 1)
 	go func() {
-		_, _ = io.Copy(upstream, raw)
+		n, _ := io.Copy(upstream, raw)
 		_ = upstream.Close()
-		close(done)
+		done <- uint64(n)
 	}()
-	_, _ = io.Copy(raw, upstream)
+	received, _ := io.Copy(raw, upstream)
+	meter.addDownload(uint64(received))
 	_ = raw.Close()
-	<-done
+	meter.addUpload(<-done)
 }
 
 // clientHelloName parses SNI using Go's TLS ClientHello parser without
