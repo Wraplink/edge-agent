@@ -13,7 +13,19 @@ import (
 
 // Proxy forwards TLS streams based on the client's SNI without decrypting TLS.
 // Only explicitly registered destinations are routable.
-// SessionUsage records forwarded application bytes, excluding TCP/IP framing.\n// Upload is client-to-upstream; download is upstream-to-client.\ntype SessionUsage struct {\n\tClientIP string\n\tUploadedBytes uint64\n\tDownloadedBytes uint64\n}\n\n// UsageObserver receives completed session measurements. Callbacks must not block.\ntype UsageObserver func(SessionUsage)\n\ntype Proxy struct {\n\tOnUsage UsageObserver
+// SessionUsage records forwarded application bytes, excluding TCP/IP framing.
+// Upload is client-to-upstream; download is upstream-to-client.
+type SessionUsage struct {
+\tClientIP string
+\tUploadedBytes uint64
+\tDownloadedBytes uint64
+}
+
+// UsageObserver receives completed session measurements. Callbacks must not block.
+type UsageObserver func(SessionUsage)
+
+type Proxy struct {
+\tOnUsage UsageObserver
 	Access             *Authorizer
 	DialTimeout        time.Duration
 	MaxConnections     int
@@ -219,12 +231,14 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	}
 	defer upstream.Close()
 	_ = raw.SetReadDeadline(time.Time{})
-	uploaded := uint64(0)\n\tfor len(hello) > 0 {
+	uploaded := uint64(0)
+\tfor len(hello) > 0 {
 		n, err := upstream.Write(hello)
 		if err != nil || n == 0 {
 			return
 		}
-		uploaded += uint64(n)\n\t\thello = hello[n:]
+		uploaded += uint64(n)
+\t\thello = hello[n:]
 	}
 	// Recheck authorization during an established session so expiry and
 	// disconnect snapshots terminate traffic without waiting for TCP close.
