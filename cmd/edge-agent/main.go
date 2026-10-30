@@ -20,6 +20,7 @@ import (
 	"github.com/wraplink/edge-agent/internal/dataplane"
 	"github.com/wraplink/edge-agent/internal/inventory"
 	"github.com/wraplink/edge-agent/internal/sniproxy"
+	"github.com/wraplink/edge-agent/internal/usage"
 )
 
 func main() {
@@ -81,6 +82,28 @@ func main() {
 	)
 	defer cancel()
 	startAccessDiagnostics(ctx, authorizer, cfg.Diagnostics)
+
+	if cfg.Backend.UsageOutboxDir != "" {
+		usageOutbox, err := usage.OpenOutbox(cfg.Backend.UsageOutboxDir)
+		if err != nil {
+			log.Fatalf("open usage outbox: %v", err)
+		}
+		sender := usage.Sender{Outbox: usageOutbox, Client: usage.Client{URL: cfg.Backend.URL, Key: cfg.Backend.ControlKey}}
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+			for {
+				if _, err := sender.Flush(ctx); err != nil && ctx.Err() == nil {
+					log.Printf("usage delivery failed; will retry: %v", err)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
+	}
 
 	if cfg.Edge.SNI.Enabled {
 		address := cfg.Edge.SNI.ListenAddress
