@@ -6,8 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
-	"strconv"
-	"strings"
 	"sync"
 )
 
@@ -112,32 +110,6 @@ func (o *Outbox) Pending() ([]Report, error) {
 }
 
 // Acknowledge deletes a report only after the backend confirms ingestion.
-func (o *Outbox) NextSequence() (uint64, error) {
-	o.mu.Lock()
-	defer o.mu.Unlock()
-	entries, err := os.ReadDir(o.dir)
-	if err != nil {
-		return 0, err
-	}
-	var max uint64
-	for _, entry := range entries {
-		if entry.IsDir() || !strings.HasSuffix(entry.Name(), ".json") {
-			continue
-		}
-		n, err := strconv.ParseUint(strings.TrimSuffix(entry.Name(), ".json"), 10, 64)
-		if err != nil {
-			return 0, err
-		}
-		if n > max {
-			max = n
-		}
-	}
-	if max == ^uint64(0) {
-		return 0, fmt.Errorf("usage sequence exhausted")
-	}
-	return max + 1, nil
-}
-
 func (o *Outbox) Acknowledge(sequence uint64) error {
 	o.mu.Lock()
 	defer o.mu.Unlock()
