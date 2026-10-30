@@ -6,6 +6,8 @@ import (
 	"os"
 	"path/filepath"
 	"sort"
+	"strconv"
+	"strings"
 	"sync"
 )
 
@@ -14,6 +16,7 @@ import (
 type Outbox struct {
 	mu  sync.Mutex
 	dir string
+	sequence uint64
 }
 
 func OpenOutbox(dir string) (*Outbox, error) {
@@ -23,11 +26,56 @@ func OpenOutbox(dir string) (*Outbox, error) {
 	if err := os.MkdirAll(dir, 0700); err != nil {
 		return nil, err
 	}
-	return &Outbox{dir: dir}, nil
+	o := &Outbox{dir: dir}
+	data, err := os.ReadFile(filepath.Join(dir, ".sequence"))
+	if err == nil {
+		o.sequence, err = strconv.ParseUint(strings.TrimSpace(string(data)), 10, 64)
+		if err != nil {
+			return nil, fmt.Errorf("invalid usage sequence: %w", err)
+		}
+	} else if !os.IsNotExist(err) {
+		return nil, err
+	}
+	return o, nil
 }
 
 func (o *Outbox) filename(sequence uint64) string {
 	return filepath.Join(o.dir, fmt.Sprintf("%020d.json", sequence))
+}
+
+// ReserveSequence persists the next monotonic sequence before it is used.
+// Callers must ensure only one process owns a given outbox directory.
+func (o *Outbox) ReserveSequence() (uint64, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.sequence == ^uint64(0) {
+		return 0, fmt.Errorf("usage sequence exhausted")
+	}
+	next := o.sequence + 1
+	temp, err := os.CreateTemp(o.dir, ".sequence-*")
+	if err != nil {
+		return 0, err
+	}
+	defer os.Remove(temp.Name())
+	if _, err := temp.WriteString(strconv.FormatUint(next, 10)); err != nil {
+		temp.Close()
+		return 0, err
+	}
+	if err := temp.Sync(); err != nil {
+		temp.Close()
+		return 0, err
+	}
+	if err := temp.Close(); err != nil {
+		return 0, err
+	}
+	if err := os.Rename(temp.Name(), filepath.Join(o.dir, ".sequence")); err != nil {
+		return 0, err
+	}
+	if err := syncDirectory(o.dir); err != nil {
+		return 0, err
+	}
+	o.sequence = next
+	return next, nil
 }
 
 func (o *Outbox) Enqueue(report Report) error {
