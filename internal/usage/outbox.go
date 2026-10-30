@@ -14,8 +14,8 @@ import (
 // Outbox stores immutable reports as one file per sequence. Files are
 // synchronized and atomically renamed before Enqueue returns.
 type Outbox struct {
-	mu  sync.Mutex
-	dir string
+	mu       sync.Mutex
+	dir      string
 	sequence uint64
 }
 
