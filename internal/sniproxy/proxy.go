@@ -14,6 +14,8 @@ import (
 // SessionUsage records forwarded application bytes, excluding TCP/IP framing.
 // Upload is client-to-upstream; download is upstream-to-client.
 type SessionUsage struct {
+	StartedAt       time.Time
+	EndedAt         time.Time
 	ClientIP        string
 	UploadedBytes   uint64
 	DownloadedBytes uint64
@@ -231,10 +233,14 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	}
 	defer upstream.Close()
 	_ = raw.SetReadDeadline(time.Time{})
+	startedAt := time.Now().UTC()
 	meter := &sessionMeter{}
 	defer func() {
 		if p.OnUsage != nil {
-			p.OnUsage(meter.snapshot(host))
+			measurement := meter.snapshot(host)
+			measurement.StartedAt = startedAt
+			measurement.EndedAt = time.Now().UTC()
+			p.OnUsage(measurement)
 		}
 	}()
 	for len(hello) > 0 {

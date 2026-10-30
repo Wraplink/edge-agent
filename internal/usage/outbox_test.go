@@ -29,7 +29,7 @@ func TestOutboxSurvivesReopen(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if len(pending) != 1 || pending[0].UploadedBytes != 100 || pending[0].Sequence != 7 {
+	if len(pending) != 1 || pending[0].UploadedBytes != 100 || pending[0].Sequence != 7 || !pending[0].StartedAt.Equal(start) || !pending[0].EndedAt.Equal(start.Add(time.Minute)) {
 		t.Fatalf("unexpected pending reports: %+v", pending)
 	}
 	if err := reopened.Acknowledge(7); err != nil {
