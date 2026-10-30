@@ -232,6 +232,12 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	defer upstream.Close()
 	_ = raw.SetReadDeadline(time.Time{})
 	uploaded := uint64(0)
+	downloaded := uint64(0)
+	defer func() {
+		if p.OnUsage != nil {
+			p.OnUsage(SessionUsage{ClientIP: host, UploadedBytes: uploaded, DownloadedBytes: downloaded})
+		}
+	}()
 	for len(hello) > 0 {
 		n, err := upstream.Write(hello)
 		if err != nil || n == 0 {
@@ -273,12 +279,10 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 		_ = upstream.Close()
 		done <- uint64(n)
 	}()
-	downloaded, _ := io.Copy(raw, upstream)
+	received, _ := io.Copy(raw, upstream)
+	downloaded = uint64(received)
 	_ = raw.Close()
 	uploaded += <-done
-	if p.OnUsage != nil {
-		p.OnUsage(SessionUsage{ClientIP: host, UploadedBytes: uploaded, DownloadedBytes: uint64(downloaded)})
-	}
 }
 
 // clientHelloName parses SNI using Go's TLS ClientHello parser without
