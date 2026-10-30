@@ -16,16 +16,16 @@ import (
 // SessionUsage records forwarded application bytes, excluding TCP/IP framing.
 // Upload is client-to-upstream; download is upstream-to-client.
 type SessionUsage struct {
-\tClientIP string
-\tUploadedBytes uint64
-\tDownloadedBytes uint64
+	ClientIP string
+	UploadedBytes uint64
+	DownloadedBytes uint64
 }
 
 // UsageObserver receives completed session measurements. Callbacks must not block.
 type UsageObserver func(SessionUsage)
 
 type Proxy struct {
-\tOnUsage UsageObserver
+	OnUsage            UsageObserver
 	Access             *Authorizer
 	DialTimeout        time.Duration
 	MaxConnections     int
@@ -232,13 +232,13 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	defer upstream.Close()
 	_ = raw.SetReadDeadline(time.Time{})
 	uploaded := uint64(0)
-\tfor len(hello) > 0 {
+	for len(hello) > 0 {
 		n, err := upstream.Write(hello)
 		if err != nil || n == 0 {
 			return
 		}
 		uploaded += uint64(n)
-\t\thello = hello[n:]
+		hello = hello[n:]
 	}
 	// Recheck authorization during an established session so expiry and
 	// disconnect snapshots terminate traffic without waiting for TCP close.
@@ -267,15 +267,18 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 			}
 		}
 	}()
-	done := make(chan struct{})
+	done := make(chan uint64, 1)
 	go func() {
-		_, _ = io.Copy(upstream, raw)
+		n, _ := io.Copy(upstream, raw)
 		_ = upstream.Close()
-		close(done)
+		done <- uint64(n)
 	}()
-	_, _ = io.Copy(raw, upstream)
+	downloaded, _ := io.Copy(raw, upstream)
 	_ = raw.Close()
-	<-done
+	uploaded += <-done
+	if p.OnUsage != nil {
+		p.OnUsage(SessionUsage{ClientIP: host, UploadedBytes: uploaded, DownloadedBytes: uint64(downloaded)})
+	}
 }
 
 // clientHelloName parses SNI using Go's TLS ClientHello parser without
