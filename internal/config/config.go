@@ -29,7 +29,7 @@ type BackendConfig struct {
 	URL            string   `yaml:"url"`
 	ControlKey     string   `yaml:"control_key"`
 	RoutePublicIPs []string `yaml:"route_public_ips"`
-	UsageOutboxDir string `yaml:"usage_outbox_dir"`
+	UsageOutboxDir string   `yaml:"usage_outbox_dir"`
 }
 
 type DNSControlConfig struct {
