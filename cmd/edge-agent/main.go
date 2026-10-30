@@ -20,6 +20,7 @@ import (
 	"github.com/wraplink/edge-agent/internal/dataplane"
 	"github.com/wraplink/edge-agent/internal/inventory"
 	"github.com/wraplink/edge-agent/internal/sniproxy"
+	"github.com/wraplink/edge-agent/internal/usage"
 )
 
 func main() {
@@ -82,6 +83,29 @@ func main() {
 	defer cancel()
 	startAccessDiagnostics(ctx, authorizer, cfg.Diagnostics)
 
+	var usageOutbox *usage.Outbox
+	if cfg.Backend.UsageOutboxDir != "" {
+		usageOutbox, err = usage.OpenOutbox(cfg.Backend.UsageOutboxDir)
+		if err != nil {
+			log.Fatalf("open usage outbox: %v", err)
+		}
+		sender := usage.Sender{Outbox: usageOutbox, Client: usage.Client{URL: cfg.Backend.URL, Key: cfg.Backend.ControlKey}}
+		go func() {
+			ticker := time.NewTicker(10 * time.Second)
+			defer ticker.Stop()
+			for {
+				if _, err := sender.Flush(ctx); err != nil && ctx.Err() == nil {
+					log.Printf("usage delivery failed; will retry: %v", err)
+				}
+				select {
+				case <-ctx.Done():
+					return
+				case <-ticker.C:
+				}
+			}
+		}()
+	}
+
 	if cfg.Edge.SNI.Enabled {
 		address := cfg.Edge.SNI.ListenAddress
 		listener, err := net.Listen("tcp", address)
@@ -92,6 +116,23 @@ func main() {
 			Access:             authorizer,
 			MaxConnections:     cfg.Edge.SNI.MaxConnections,
 			ClientHelloTimeout: cfg.Edge.SNI.ClientHelloTimeout,
+		}
+		if usageOutbox != nil {
+			proxy.OnUsage = func(measurement sniproxy.SessionUsage) {
+				if measurement.UploadedBytes == 0 && measurement.DownloadedBytes == 0 {
+					return
+				}
+				sequence, err := usageOutbox.ReserveSequence()
+				if err != nil {
+					log.Printf("CRITICAL: usage sequence reservation failed: %v", err)
+					return
+				}
+				now := time.Now().UTC()
+				report := usage.Report{AgentID: cfg.Agent.ID, Sequence: sequence, ClientIP: measurement.ClientIP, UploadedBytes: measurement.UploadedBytes, DownloadedBytes: measurement.DownloadedBytes, StartedAt: now, EndedAt: now}
+				if err := usageOutbox.Enqueue(report); err != nil {
+					log.Printf("CRITICAL: usage persistence failed: %v", err)
+				}
+			}
 		}
 		service.SetSNIForwarder(proxy)
 		go func() {
