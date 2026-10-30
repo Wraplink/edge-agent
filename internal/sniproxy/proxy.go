@@ -14,9 +14,9 @@ import (
 // SessionUsage records forwarded application bytes, excluding TCP/IP framing.
 // Upload is client-to-upstream; download is upstream-to-client.
 type SessionUsage struct {
-	ClientIP		string
-	UploadedBytes	uint64
-	DownloadedBytes	uint64
+	ClientIP        string
+	UploadedBytes   uint64
+	DownloadedBytes uint64
 }
 
 // UsageObserver receives completed session measurements. Callbacks must not block.
@@ -25,7 +25,7 @@ type UsageObserver func(SessionUsage)
 // Proxy forwards TLS streams based on the client's SNI without decrypting TLS.
 // Only explicitly registered destinations are routable.
 type Proxy struct {
-	OnUsage			UsageObserver
+	OnUsage            UsageObserver
 	Access             *Authorizer
 	DialTimeout        time.Duration
 	MaxConnections     int
