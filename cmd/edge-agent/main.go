@@ -83,8 +83,9 @@ func main() {
 	defer cancel()
 	startAccessDiagnostics(ctx, authorizer, cfg.Diagnostics)
 
+	var usageOutbox *usage.Outbox
 	if cfg.Backend.UsageOutboxDir != "" {
-		usageOutbox, err := usage.OpenOutbox(cfg.Backend.UsageOutboxDir)
+		usageOutbox, err = usage.OpenOutbox(cfg.Backend.UsageOutboxDir)
 		if err != nil {
 			log.Fatalf("open usage outbox: %v", err)
 		}
@@ -115,6 +116,23 @@ func main() {
 			Access:             authorizer,
 			MaxConnections:     cfg.Edge.SNI.MaxConnections,
 			ClientHelloTimeout: cfg.Edge.SNI.ClientHelloTimeout,
+		}
+		if usageOutbox != nil {
+			proxy.OnUsage = func(measurement sniproxy.SessionUsage) {
+				if measurement.UploadedBytes == 0 && measurement.DownloadedBytes == 0 {
+					return
+				}
+				sequence, err := usageOutbox.ReserveSequence()
+				if err != nil {
+					log.Printf("CRITICAL: reserve usage sequence: %v", err)
+					return
+				}
+				now := time.Now().UTC()
+				report := usage.Report{AgentID: cfg.Agent.ID, Sequence: sequence, ClientIP: measurement.ClientIP, UploadedBytes: measurement.UploadedBytes, DownloadedBytes: measurement.DownloadedBytes, StartedAt: now, EndedAt: now}
+				if err := usageOutbox.Enqueue(report); err != nil {
+					log.Printf("CRITICAL: persist usage report: %v", err)
+				}
+			}
 		}
 		service.SetSNIForwarder(proxy)
 		go func() {
