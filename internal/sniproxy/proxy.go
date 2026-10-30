@@ -14,8 +14,8 @@ import (
 // SessionUsage records forwarded application bytes, excluding TCP/IP framing.
 // Upload is client-to-upstream; download is upstream-to-client.
 type SessionUsage struct {
-	StartedAt time.Time
-	EndedAt time.Time
+	StartedAt       time.Time
+	EndedAt         time.Time
 	ClientIP        string
 	UploadedBytes   uint64
 	DownloadedBytes uint64
