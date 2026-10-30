@@ -29,6 +29,7 @@ type BackendConfig struct {
 	URL            string   `yaml:"url"`
 	ControlKey     string   `yaml:"control_key"`
 	RoutePublicIPs []string `yaml:"route_public_ips"`
+	UsageOutboxDir string `yaml:"usage_outbox_dir"`
 }
 
 type DNSControlConfig struct {
@@ -91,6 +92,7 @@ func Load(filename string) (Config, error) {
 
 	cfg.DNSControl.URL = strings.TrimRight(strings.TrimSpace(cfg.DNSControl.URL), "/")
 	cfg.Backend.URL = strings.TrimRight(strings.TrimSpace(cfg.Backend.URL), "/")
+	cfg.Backend.UsageOutboxDir = strings.TrimSpace(cfg.Backend.UsageOutboxDir)
 	cfg.Agent.ID = strings.TrimSpace(cfg.Agent.ID)
 	cfg.Agent.Region = strings.TrimSpace(cfg.Agent.Region)
 	cfg.Edge.SNI.ListenAddress = strings.TrimSpace(cfg.Edge.SNI.ListenAddress)
@@ -112,6 +114,9 @@ func Load(filename string) (Config, error) {
 }
 
 func (c Config) Validate() error {
+	if c.Backend.UsageOutboxDir != "" && (c.Backend.URL == "" || c.Backend.ControlKey == "") {
+		return fmt.Errorf("backend.url and backend.control_key are required when usage_outbox_dir is configured")
+	}
 	if c.Diagnostics.Enabled {
 		if c.Diagnostics.Token == "" {
 			return fmt.Errorf("diagnostics.token is required when enabled")
