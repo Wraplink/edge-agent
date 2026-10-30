@@ -54,3 +54,27 @@ func TestOutboxRejectsCorruptedReport(t *testing.T) {
 		t.Fatal("corrupt report must not be silently discarded")
 	}
 }
+
+func TestSequenceReservationSurvivesRestartAndAcknowledgement(t *testing.T) {
+	dir := t.TempDir()
+	first, err := OpenOutbox(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	a, err := first.ReserveSequence()
+	if err != nil || a != 1 {
+		t.Fatalf("first sequence = %d, %v", a, err)
+	}
+	b, err := first.ReserveSequence()
+	if err != nil || b != 2 {
+		t.Fatalf("second sequence = %d, %v", b, err)
+	}
+	restarted, err := OpenOutbox(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	next, err := restarted.ReserveSequence()
+	if err != nil || next != 3 {
+		t.Fatalf("sequence after restart = %d, %v", next, err)
+	}
+}
