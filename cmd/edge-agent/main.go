@@ -127,8 +127,7 @@ func main() {
 					log.Printf("CRITICAL: reserve usage sequence: %v", err)
 					return
 				}
-				now := time.Now().UTC()
-				report := usage.Report{AgentID: cfg.Agent.ID, Sequence: sequence, ClientIP: measurement.ClientIP, UploadedBytes: measurement.UploadedBytes, DownloadedBytes: measurement.DownloadedBytes, StartedAt: now, EndedAt: now}
+				report := usage.Report{AgentID: cfg.Agent.ID, Sequence: sequence, ClientIP: measurement.ClientIP, UploadedBytes: measurement.UploadedBytes, DownloadedBytes: measurement.DownloadedBytes, StartedAt: measurement.StartedAt, EndedAt: measurement.EndedAt}
 				if err := usageOutbox.Enqueue(report); err != nil {
 					log.Printf("CRITICAL: persist usage report: %v", err)
 				}
