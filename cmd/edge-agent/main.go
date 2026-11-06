@@ -156,7 +156,7 @@ func main() {
 			log.Printf("edge-agent stopped")
 			return
 		}
-		reportAlert("agent_stopped","Edge agent stopped unexpectedly")
+		_ = alerts.Send("agent_stopped","critical","Edge agent stopped unexpectedly")
         log.Fatalf("edge-agent failed: %v", err)
 	}
 }
