@@ -87,6 +87,7 @@ func (s *RouteSampler) Sample(now time.Time, counters []RouteCounter) ([]RouteDe
 // avoid losing or double-counting bytes across a crash.
 func (s *RouteSampler) SaveCheckpoint(path string) error {
     if path == "" { return fmt.Errorf("checkpoint path is required") }
+    if s.last.IsZero() { return fmt.Errorf("cannot save uninitialized route sampler") }
     data, err := json.Marshal(struct {
         Previous map[string]RouteCounter `json:"previous"`
         Last time.Time `json:"last"`
