@@ -60,3 +60,25 @@ func TestQueueRouteDeltasRejectsLaterInvalidWithoutPartialWrite(t *testing.T) {
 		t.Fatalf("partially persisted batch: %+v %v", pending, err)
 	}
 }
+
+func TestQueueRouteDeltasValidationDoesNotConsumeSequence(t *testing.T) {
+	outbox, err := OpenOutbox(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	now := time.Now()
+	deltas := []RouteDelta{
+		{ClientIP: "192.0.2.1", UploadedBytes: 100, StartedAt: now, EndedAt: now.Add(time.Minute)},
+		{ClientIP: "192.0.2.2", UploadedBytes: 100, StartedAt: now, EndedAt: now},
+	}
+	if err := QueueRouteDeltas(outbox, "edge-01", deltas); err == nil {
+		t.Fatal("invalid later interval accepted")
+	}
+	if err := QueueRouteDeltas(outbox, "edge-01", deltas[:1]); err != nil {
+		t.Fatal(err)
+	}
+	pending, err := outbox.Pending()
+	if err != nil || len(pending) != 1 || pending[0].Sequence != 1 {
+		t.Fatalf("validation consumed a sequence or queued partial batch: %+v %v", pending, err)
+	}
+}
