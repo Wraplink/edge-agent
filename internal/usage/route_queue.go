@@ -2,7 +2,6 @@ package usage
 
 import (
 	"fmt"
-	"net"
 )
 
 // QueueRouteDeltas converts measured per-client route intervals into the
@@ -16,12 +15,19 @@ func QueueRouteDeltas(outbox *Outbox, agentID string, deltas []RouteDelta) error
 	if agentID == "" {
 		return fmt.Errorf("agent ID is required")
 	}
-	// Validate the complete batch before reserving any sequence or writing files.
-	// This avoids partially queued batches caused by a later invalid delta.
+	// Validate all reports before reserving any sequence or writing files.
+	// Sequence allocation is durable and must not be consumed by malformed input.
 	for _, delta := range deltas {
-		ip := net.ParseIP(delta.ClientIP)
-		if ip == nil || ip.To4() == nil || !delta.EndedAt.After(delta.StartedAt) {
-			return fmt.Errorf("invalid route delta interval or client IP")
+		if delta.UploadedBytes == 0 && delta.DownloadedBytes == 0 {
+			continue
+		}
+		report := Report{
+			AgentID: agentID, Sequence: 1, ClientIP: delta.ClientIP,
+			UploadedBytes: delta.UploadedBytes, DownloadedBytes: delta.DownloadedBytes,
+			StartedAt: delta.StartedAt, EndedAt: delta.EndedAt,
+		}
+		if err := report.Validate(); err != nil {
+			return fmt.Errorf("invalid route delta: %w", err)
 		}
 	}
 	for _, delta := range deltas {
@@ -29,6 +35,8 @@ func QueueRouteDeltas(outbox *Outbox, agentID string, deltas []RouteDelta) error
 		if ip == nil || ip.To4() == nil || !delta.EndedAt.After(delta.StartedAt) {
 			return fmt.Errorf("invalid route delta interval or client IP")
 		}
+	}
+	for _, delta := range deltas {
 		if delta.UploadedBytes == 0 && delta.DownloadedBytes == 0 {
 			continue
 		}
