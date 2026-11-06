@@ -64,8 +64,14 @@ func (s *RouteSampler) Sample(now time.Time, counters []RouteCounter) ([]RouteDe
 	totals := make(map[string]*RouteDelta)
 	for key, c := range next {
 		previous, ok := s.previous[key]
-		if !ok || previous.ClientIP != c.ClientIP || previous.Direction != c.Direction || c.Bytes < previous.Bytes {
-			continue // New, replaced or reset counter: establish new baseline.
+		if !ok {
+			continue // Newly installed counter: establish its baseline.
+		}
+		if previous.ClientIP != c.ClientIP || previous.Direction != c.Direction {
+			return nil, fmt.Errorf("route counter identity changed for %q", key)
+		}
+		if c.Bytes < previous.Bytes {
+			return nil, fmt.Errorf("route counter reset for %q: previous=%d current=%d", key, previous.Bytes, c.Bytes)
 		}
 		delta := c.Bytes - previous.Bytes
 		if delta == 0 {
@@ -86,6 +92,11 @@ func (s *RouteSampler) Sample(now time.Time, counters []RouteCounter) ([]RouteDe
 				return nil, fmt.Errorf("download counter overflow for client %s", c.ClientIP)
 			}
 			entry.DownloadedBytes += delta
+		}
+	}
+	for key := range s.previous {
+		if _, ok := next[key]; !ok {
+			return nil, fmt.Errorf("route counter disappeared without reconciliation: %q", key)
 		}
 	}
 	result := make([]RouteDelta, 0, len(totals))
