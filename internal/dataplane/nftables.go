@@ -23,6 +23,7 @@ const (
 	outputChainName     = "output"
 	guardPreroutingName = "guard_prerouting"
 	guardOutputName     = "guard_output"
+ routeAccountingName = "route_accounting"
 	entitledSetName     = "entitled_v4"
 )
 
@@ -35,6 +36,7 @@ type NFT struct {
 	outputChain        *nftables.Chain
 	guardPrerouting    *nftables.Chain
 	guardOutput        *nftables.Chain
+ routeAccounting    *nftables.Chain
 	localOutputEnabled bool
 	entitledSet        *nftables.Set
 
@@ -88,6 +90,15 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 		Hooknum:  nftables.ChainHookOutput,
 		Priority: nftables.ChainPriorityRaw,
 	})
+	// Dedicated FORWARD filter hook for full-route accounting. The chain is
+	// intentionally empty until the usage collector installs scoped rules.
+	routeAccounting := conn.AddChain(&nftables.Chain{
+		Table: table,
+		Name: routeAccountingName,
+		Type: nftables.ChainTypeFilter,
+		Hooknum: nftables.ChainHookForward,
+		Priority: nftables.ChainPriorityFilter,
+	})
 	entitledSet := &nftables.Set{
 		Table:      table,
 		Name:       entitledSetName,
@@ -109,6 +120,7 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 		outputChain:        outputChain,
 		guardPrerouting:    guardPrerouting,
 		guardOutput:        guardOutput,
+        routeAccounting: routeAccounting,
 		localOutputEnabled: enabled,
 		entitledSet:        entitledSet,
 		routes:             make(map[string]*routeState),
