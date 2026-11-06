@@ -21,3 +21,13 @@ func TestRenderForwardRulesRejectsUnsafeIdentifiers(t *testing.T) {
  if _,err:=RenderForwardRules(nil,nil,"wraplink;delete table","chain");err==nil {t.Fatal("accepted command injection")}
  if _,err:=RenderForwardRules([]client.Lease{{Type:"route",Address:"bad",DestinationIP:"198.51.100.5",Protocol:"tcp"}},nil,"","");err==nil {t.Fatal("accepted invalid route IP")}
 }
+
+func TestExistingAccountingRules(t *testing.T) {
+ empty:=[]byte(`{"nftables":[{"metainfo":{"version":"1.0"}},{"chain":{"name":"route_accounting"}}]}`)
+ occupied:=[]byte(`{"nftables":[{"chain":{"name":"route_accounting"}},{"rule":{"handle":5,"expr":[{"counter":{"bytes":500}}]}}]}`)
+ yes,err:=ExistingAccountingRules(empty)
+ if err!=nil||yes {t.Fatalf("empty chain: %v %v",yes,err)}
+ yes,err=ExistingAccountingRules(occupied)
+ if err!=nil||!yes {t.Fatalf("occupied chain: %v %v",yes,err)}
+ if _,err=ExistingAccountingRules([]byte("broken"));err==nil {t.Fatal("invalid JSON accepted")}
+}
