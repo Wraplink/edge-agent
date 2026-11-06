@@ -2,6 +2,9 @@ package usage
 
 import (
     "fmt"
+    "encoding/json"
+    "os"
+    "path/filepath"
     "sort"
     "time"
 )
@@ -77,4 +80,49 @@ func (s *RouteSampler) Sample(now time.Time, counters []RouteCounter) ([]RouteDe
     sort.Slice(result, func(i,j int) bool { return result[i].ClientIP < result[j].ClientIP })
     s.previous, s.last = next, now
     return result, nil
+}
+
+// SaveCheckpoint atomically writes the sampler baseline. It is useful for
+// recovery, but the caller must coordinate it with durable usage reports to
+// avoid losing or double-counting bytes across a crash.
+func (s *RouteSampler) SaveCheckpoint(path string) error {
+    if path == "" { return fmt.Errorf("checkpoint path is required") }
+    data, err := json.Marshal(struct {
+        Previous map[string]RouteCounter `json:"previous"`
+        Last time.Time `json:"last"`
+    }{s.previous, s.last})
+    if err != nil { return err }
+    dir := filepath.Dir(path)
+    if err := os.MkdirAll(dir, 0700); err != nil { return err }
+    temp, err := os.CreateTemp(dir, ".route-checkpoint-*")
+    if err != nil { return err }
+    defer os.Remove(temp.Name())
+    if err := temp.Chmod(0600); err != nil { temp.Close(); return err }
+    if _, err := temp.Write(data); err != nil { temp.Close(); return err }
+    if err := temp.Sync(); err != nil { temp.Close(); return err }
+    if err := temp.Close(); err != nil { return err }
+    if err := os.Rename(temp.Name(), path); err != nil { return err }
+    return syncDirectory(dir)
+}
+
+// LoadRouteSampler restores a previously saved baseline, or initializes an
+// empty sampler when no checkpoint exists.
+func LoadRouteSampler(path string) (*RouteSampler, error) {
+    if path == "" { return nil, fmt.Errorf("checkpoint path is required") }
+    data, err := os.ReadFile(path)
+    if os.IsNotExist(err) { return NewRouteSampler(), nil }
+    if err != nil { return nil, err }
+    var checkpoint struct {
+        Previous map[string]RouteCounter `json:"previous"`
+        Last time.Time `json:"last"`
+    }
+    if err := json.Unmarshal(data, &checkpoint); err != nil { return nil, fmt.Errorf("decode route checkpoint: %w", err) }
+    if checkpoint.Previous == nil { return nil, fmt.Errorf("invalid route checkpoint: missing counters") }
+    if checkpoint.Last.IsZero() { return nil, fmt.Errorf("invalid route checkpoint: missing timestamp") }
+    for key, c := range checkpoint.Previous {
+        if key == "" || c.Key != key || c.ClientIP == "" || (c.Direction != "upload" && c.Direction != "download") {
+            return nil, fmt.Errorf("invalid route checkpoint counter %q", key)
+        }
+    }
+    return &RouteSampler{previous: checkpoint.Previous, last: checkpoint.Last}, nil
 }
