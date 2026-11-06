@@ -33,20 +33,30 @@ func TestRouteSamplerCountsBothDirectionsAndClients(t *testing.T) {
 	}
 }
 
-func TestRouteSamplerRebaselinesResets(t *testing.T) {
+func TestRouteSamplerFailsClosedOnResetAndMissingCounters(t *testing.T) {
 	s := NewRouteSampler()
 	now := time.Now()
 	a := []RouteCounter{{Key: "counter", ClientIP: "192.0.2.1", Direction: "upload", Bytes: 100}}
-	_, _ = s.Sample(now, a)
-	a[0].Bytes = 5
-	result, err := s.Sample(now.Add(time.Second), a)
-	if err != nil || len(result) != 0 {
-		t.Fatalf("reset: %v %v", result, err)
+	if _, err := s.Sample(now, a); err != nil {
+		t.Fatal(err)
 	}
-	a[0].Bytes = 12
-	result, err = s.Sample(now.Add(2*time.Second), a)
-	if err != nil || len(result) != 1 || result[0].UploadedBytes != 7 {
-		t.Fatalf("after reset: %v %v", result, err)
+	a[0].Bytes = 5
+	if _, err := s.Sample(now.Add(time.Second), a); err == nil {
+		t.Fatal("reset must fail closed")
+	}
+	if !s.last.Equal(now) {
+		t.Fatal("reset advanced baseline")
+	}
+	if _, err := s.Sample(now.Add(time.Second), nil); err == nil {
+		t.Fatal("missing counter must fail closed")
+	}
+	if !s.last.Equal(now) {
+		t.Fatal("missing counter advanced baseline")
+	}
+	a[0].Bytes = 112
+	result, err := s.Sample(now.Add(2*time.Second), a)
+	if err != nil || len(result) != 1 || result[0].UploadedBytes != 12 {
+		t.Fatalf("failed sample must not lose usage: %+v %v", result, err)
 	}
 }
 
