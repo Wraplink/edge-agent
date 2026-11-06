@@ -74,7 +74,13 @@ func (s *RouteSampler) Sample(now time.Time, counters []RouteCounter) ([]RouteDe
             entry = &RouteDelta{ClientIP:c.ClientIP, StartedAt:s.last, EndedAt:now}
             totals[c.ClientIP] = entry
         }
-        if c.Direction == "upload" {\n            if delta > math.MaxUint64-entry.UploadedBytes { return nil, fmt.Errorf("upload counter overflow for client %s", c.ClientIP) }\n            entry.UploadedBytes += delta\n        } else {\n            if delta > math.MaxUint64-entry.DownloadedBytes { return nil, fmt.Errorf("download counter overflow for client %s", c.ClientIP) }\n            entry.DownloadedBytes += delta\n        }
+        if c.Direction == "upload" {
+            if delta > math.MaxUint64-entry.UploadedBytes { return nil, fmt.Errorf("upload counter overflow for client %s", c.ClientIP) }
+            entry.UploadedBytes += delta
+        } else {
+            if delta > math.MaxUint64-entry.DownloadedBytes { return nil, fmt.Errorf("download counter overflow for client %s", c.ClientIP) }
+            entry.DownloadedBytes += delta
+        }
     }
     result := make([]RouteDelta, 0, len(totals))
     for _, item := range totals { result = append(result, *item) }
