@@ -2,6 +2,7 @@ package usage
 
 import (
  "testing"
+ "math"
  "time"
 )
 
@@ -33,4 +34,20 @@ func TestRouteSamplerRebaselinesResets(t *testing.T) {
  a[0].Bytes=12
  result,err=s.Sample(now.Add(2*time.Second),a)
  if err!=nil||len(result)!=1||result[0].UploadedBytes!=7 {t.Fatalf("after reset: %v %v",result,err)}
+}
+
+func TestRouteSamplerRejectsCounterOverflowWithoutAdvancing(t *testing.T) {
+ sampler:=NewRouteSampler()
+ now:=time.Date(2026,11,6,0,0,0,0,time.UTC)
+ base:=[]RouteCounter{
+  {Key:"one",ClientIP:"192.0.2.1",Direction:"upload",Bytes:0},
+  {Key:"two",ClientIP:"192.0.2.1",Direction:"upload",Bytes:0},
+ }
+ if _,err:=sampler.Sample(now,base);err!=nil {t.Fatal(err)}
+ huge:=[]RouteCounter{
+  {Key:"one",ClientIP:"192.0.2.1",Direction:"upload",Bytes:math.MaxUint64},
+  {Key:"two",ClientIP:"192.0.2.1",Direction:"upload",Bytes:1},
+ }
+ if _,err:=sampler.Sample(now.Add(time.Minute),huge);err==nil {t.Fatal("expected overflow rejection")}
+ if !sampler.last.Equal(now) {t.Fatal("overflow advanced baseline")}
 }
