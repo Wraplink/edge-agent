@@ -54,6 +54,9 @@ func ParseNFTCounters(data []byte) ([]RouteCounter, error) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		return nil, fmt.Errorf("decode nft counters: %w", err)
 	}
+	if document.NFTables == nil {
+		return nil, fmt.Errorf("invalid nft counters: missing nftables array")
+	}
 	result := make([]RouteCounter, 0)
 	seen := make(map[string]bool)
 	for _, item := range document.NFTables {
