@@ -132,13 +132,13 @@ func main() {
 				sequence, err := usageOutbox.ReserveSequence()
 				if err != nil {
 					log.Printf("CRITICAL: reserve usage sequence: %v", err)
-                    reportAlert("usage_sequence_failed", "Unable to reserve usage sequence")
+					reportAlert("usage_sequence_failed", "Unable to reserve usage sequence")
 					return
 				}
 				report := usage.Report{AgentID: cfg.Agent.ID, Sequence: sequence, ClientIP: measurement.ClientIP, UploadedBytes: measurement.UploadedBytes, DownloadedBytes: measurement.DownloadedBytes, StartedAt: measurement.StartedAt, EndedAt: measurement.EndedAt}
 				if err := usageOutbox.Enqueue(report); err != nil {
 					log.Printf("CRITICAL: persist usage report: %v", err)
-                    reportAlert("usage_persist_failed", "Unable to persist usage report")
+					reportAlert("usage_persist_failed", "Unable to persist usage report")
 				}
 			}
 		}
@@ -146,7 +146,7 @@ func main() {
 		go func() {
 			if err := proxy.Serve(ctx, listener); err != nil {
 				log.Printf("SNI listener stopped: %v", err)
-                reportAlert("sni_listener_stopped", "SNI listener stopped unexpectedly")
+				reportAlert("sni_listener_stopped", "SNI listener stopped unexpectedly")
 				cancel()
 			}
 		}()
@@ -159,7 +159,7 @@ func main() {
 			return
 		}
 		_ = alerts.Send("agent_stopped", "critical", "Edge agent stopped unexpectedly")
-        log.Fatalf("edge-agent failed: %v", err)
+		log.Fatalf("edge-agent failed: %v", err)
 	}
 }
 
