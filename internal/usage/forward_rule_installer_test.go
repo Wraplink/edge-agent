@@ -12,7 +12,7 @@ func TestRenderForwardRulesConntrackScope(t *testing.T) {
  if err!=nil {t.Fatal(err)}
  if !strings.HasPrefix(script,"flush chain ip wraplink route_accounting\n") {t.Fatal(script)}
  if strings.Count(script," counter comment ")!=4 {t.Fatalf("expected four counters: %s",script)}
- for _,part:=range []string{"ct original daddr 203.0.113.7","ct original saddr 192.0.2.10","ip daddr 198.51.100.5","ip saddr 198.51.100.5","meta l4proto tcp","meta l4proto udp"} {
+ for _,part:=range []string{"ct original daddr 203.0.113.7","ct direction original","ct direction reply","ct original saddr 192.0.2.10","ip daddr 198.51.100.5","ip saddr 198.51.100.5","meta l4proto tcp","meta l4proto udp"} {
   if !strings.Contains(script,part) {t.Fatalf("missing %q in %s",part,script)}
  }
 }
