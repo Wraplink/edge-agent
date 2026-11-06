@@ -68,9 +68,9 @@ func RenderForwardRules(leases []client.Lease, clientIPs []string, table, chain 
    for _,direction:=range []string{"upload","download"} {
     tag:="wraplink:route-usage:"+ip+":"+direction+":"+id
     if direction=="upload" {
-     fmt.Fprintf(&script,"add rule ip %s %s ip saddr %s ip daddr %s ct original daddr %s meta l4proto %s counter comment %q\n",table,chain,ip,r.origin,r.public,r.proto,tag)
+     fmt.Fprintf(&script,"add rule ip %s %s ip saddr %s ip daddr %s ct direction original ct original daddr %s meta l4proto %s counter comment %q\n",table,chain,ip,r.origin,r.public,r.proto,tag)
     } else {
-     fmt.Fprintf(&script,"add rule ip %s %s ip saddr %s ip daddr %s ct original saddr %s ct original daddr %s meta l4proto %s counter comment %q\n",table,chain,r.origin,ip,ip,r.public,r.proto,tag)
+     fmt.Fprintf(&script,"add rule ip %s %s ip saddr %s ip daddr %s ct direction reply ct original saddr %s ct original daddr %s meta l4proto %s counter comment %q\n",table,chain,r.origin,ip,ip,r.public,r.proto,tag)
     }
    }
   }
