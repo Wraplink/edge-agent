@@ -12,8 +12,8 @@ func TestRenderForwardRulesConntrackScope(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !strings.HasPrefix(script, "flush chain ip wraplink route_accounting\n") {
-		t.Fatal(script)
+	if strings.Contains(script, "flush chain") || strings.Contains(script, "delete chain") {
+		t.Fatalf("rendered script must not destroy existing counters: %s", script)
 	}
 	if strings.Count(script, " counter comment ") != 4 {
 		t.Fatalf("expected four counters: %s", script)
