@@ -1,6 +1,7 @@
 package usage
 
 import (
+	"os"
 	"path/filepath"
 	"testing"
 	"time"
@@ -37,10 +38,13 @@ func TestRouteSamplerCheckpointRejectsCorruption(t *testing.T) {
 	if err != nil || s == nil {
 		t.Fatalf("missing checkpoint: %v", err)
 	}
-	if err = s.SaveCheckpoint(path); err != nil {
+	if err = s.SaveCheckpoint(path); err == nil {
+		t.Fatal("uninitialized sampler checkpoint must be rejected")
+	}
+	if err = os.WriteFile(path, []byte(`{"previous":{},"last":"0001-01-01T00:00:00Z"}`), 0600); err != nil {
 		t.Fatal(err)
 	}
 	if _, err = LoadRouteSampler(path); err == nil {
-		t.Fatal("empty baseline must not be accepted as a persisted checkpoint")
+		t.Fatal("corrupt checkpoint with missing timestamp must be rejected")
 	}
 }
