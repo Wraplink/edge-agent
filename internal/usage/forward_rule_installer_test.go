@@ -45,6 +45,9 @@ func TestExistingAccountingRules(t *testing.T) {
 	if err != nil || !yes {
 		t.Fatalf("occupied chain: %v %v", yes, err)
 	}
+	if _, err = ExistingAccountingRules([]byte(`{}`)); err == nil {
+		t.Fatal("missing nftables array accepted")
+	}
 	if _, err = ExistingAccountingRules([]byte("broken")); err == nil {
 		t.Fatal("invalid JSON accepted")
 	}
