@@ -82,7 +82,7 @@ func RenderForwardRules(leases []client.Lease, clientIPs []string, table, chain 
 	var script strings.Builder
 	// The chain is a filter base chain on FORWARD. Flush/rebuild in one
 	// nft transaction to avoid partially applied accounting rules.
-	fmt.Fprintf(&script, "flush chain ip %s %s\n", table, chain)
+	// Rules are installed only after verifying the chain is empty.\n\t// Never flush: doing so can discard unreported byte counters.
 	for _, r := range routes {
 		for _, ip := range addresses {
 			id := strings.ReplaceAll(r.public+"-"+r.origin+"-"+r.proto, ".", "_")
