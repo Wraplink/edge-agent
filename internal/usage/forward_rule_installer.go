@@ -123,6 +123,9 @@ func ExistingAccountingRules(data []byte) (bool, error) {
 	if err := json.Unmarshal(data, &document); err != nil {
 		return false, fmt.Errorf("decode accounting chain: %w", err)
 	}
+	if document.NFTables == nil {
+		return false, fmt.Errorf("invalid accounting chain response: missing nftables array")
+	}
 	for _, item := range document.NFTables {
 		if len(item.Rule) > 0 && string(item.Rule) != "null" {
 			return true, nil
