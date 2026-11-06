@@ -4,6 +4,7 @@ import (
  "bytes"
  "github.com/wraplink/edge-agent/internal/client"
  "context"
+ "encoding/json"
  "fmt"
  "net"
  "os/exec"
@@ -86,6 +87,20 @@ func safeNFTIdentifier(s string) bool {
  return true
 }
 
+// ExistingAccountingRules reports whether a chain already contains rules.
+// Replacing an active counter chain would discard unreported bytes, so Apply
+// fails closed until a checkpoint-aware reconciliation mechanism is available.
+func ExistingAccountingRules(data []byte) (bool,error) {
+ var document struct {
+  NFTables []struct {Rule json.RawMessage `json:"rule"`} `json:"nftables"`
+ }
+ if err:=json.Unmarshal(data,&document);err!=nil {return false,fmt.Errorf("decode accounting chain: %w",err)}
+ for _,item:=range document.NFTables {
+  if len(item.Rule)>0 && string(item.Rule)!="null" {return true,nil}
+ }
+ return false,nil
+}
+
 func (i ForwardRuleInstaller) Apply(ctx context.Context, leases []client.Lease, clientIPs []string) error {
  table,chain:=i.Table,i.Chain
  if table=="" {table="wraplink"}
@@ -94,6 +109,11 @@ func (i ForwardRuleInstaller) Apply(ctx context.Context, leases []client.Lease, 
  if err!=nil {return err}
  command:=i.Command
  if command=="" {command="nft"}
+ existing,err:=exec.CommandContext(ctx,command,"-j","list","chain","ip",table,chain).Output()
+ if err!=nil {return fmt.Errorf("inspect existing route accounting chain: %w",err)}
+ occupied,err:=ExistingAccountingRules(existing)
+ if err!=nil {return err}
+ if occupied {return fmt.Errorf("refusing to replace active route accounting counters: checkpoint-aware reconciliation required")}
  cmd:=exec.CommandContext(ctx,command,"-f","-")
  cmd.Stdin=strings.NewReader(script)
  output,err:=cmd.CombinedOutput()
