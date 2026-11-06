@@ -12,7 +12,15 @@ import (
 func QueueRouteDeltas(outbox *Outbox, agentID string, deltas []RouteDelta) error {
     if outbox == nil { return fmt.Errorf("route usage outbox is required") }
     if agentID == "" { return fmt.Errorf("agent ID is required") }
-    // Validate the complete batch before reserving any sequence or writing files.\n    // This avoids partially queued batches caused by a later invalid delta.\n    for _, delta := range deltas {\n        ip := net.ParseIP(delta.ClientIP)\n        if ip == nil || ip.To4() == nil || !delta.EndedAt.After(delta.StartedAt) {\n            return fmt.Errorf("invalid route delta interval or client IP")\n        }\n    }\n    for _, delta := range deltas {
+    // Validate the complete batch before reserving any sequence or writing files.
+    // This avoids partially queued batches caused by a later invalid delta.
+    for _, delta := range deltas {
+        ip := net.ParseIP(delta.ClientIP)
+        if ip == nil || ip.To4() == nil || !delta.EndedAt.After(delta.StartedAt) {
+            return fmt.Errorf("invalid route delta interval or client IP")
+        }
+    }
+    for _, delta := range deltas {
         ip := net.ParseIP(delta.ClientIP)
         if ip == nil || ip.To4() == nil || !delta.EndedAt.After(delta.StartedAt) {
             return fmt.Errorf("invalid route delta interval or client IP")
