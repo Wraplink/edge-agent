@@ -15,6 +15,8 @@ func TestParseNFTCounters(t *testing.T) {
 
 func TestParseNFTCountersRejectsAmbiguousRules(t *testing.T) {
 	cases := []string{
+		`{}`,
+		`{"nftables":null}`,
 		`{"nftables":[{"rule":{"comment":"wraplink:route-usage:192.0.2.1:upload:a","expr":[]}}]}`,
 		`{"nftables":[{"rule":{"comment":"wraplink:route-usage:192.0.2.1:upload:a","expr":[{"counter":{"bytes":1}},{"counter":{"bytes":2}}]}}]}`,
 		`{"nftables":[{"rule":{"comment":"wraplink:route-usage:invalid:upload:a","expr":[{"counter":{"bytes":1}}]}}]}`,
