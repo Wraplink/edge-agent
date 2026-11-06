@@ -29,3 +29,16 @@ func TestQueueRouteDeltasRejectsInvalid(t *testing.T) {
  pending,err:=outbox.Pending()
  if err!=nil||len(pending)!=0 {t.Fatalf("invalid report queued: %+v %v",pending,err)}
 }
+
+func TestQueueRouteDeltasRejectsLaterInvalidWithoutPartialWrite(t *testing.T) {
+ outbox,err:=OpenOutbox(t.TempDir())
+ if err!=nil {t.Fatal(err)}
+ now:=time.Now()
+ deltas:=[]RouteDelta{
+  {ClientIP:"192.0.2.1",UploadedBytes:100,StartedAt:now,EndedAt:now.Add(time.Minute)},
+  {ClientIP:"invalid",UploadedBytes:100,StartedAt:now,EndedAt:now.Add(time.Minute)},
+ }
+ if err:=QueueRouteDeltas(outbox,"edge-01",deltas);err==nil {t.Fatal("expected validation error")}
+ pending,err:=outbox.Pending()
+ if err!=nil||len(pending)!=0 {t.Fatalf("partially persisted batch: %+v %v",pending,err)}
+}
