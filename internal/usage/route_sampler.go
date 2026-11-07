@@ -42,7 +42,7 @@ func NewRouteSampler() *RouteSampler {
 }
 
 // Sample initializes its baseline on the first call, so preexisting bytes
-// cannot be charged twice. Removed/replaced counters are also rebaselined.
+// cannot be charged twice. Counter removal and reset fail closed until reconciled.
 func (s *RouteSampler) Sample(now time.Time, counters []RouteCounter) ([]RouteDelta, error) {
 	if now.IsZero() || (!s.last.IsZero() && !now.After(s.last)) {
 		return nil, fmt.Errorf("route sample time must increase")
@@ -65,7 +65,10 @@ func (s *RouteSampler) Sample(now time.Time, counters []RouteCounter) ([]RouteDe
 	for key, c := range next {
 		previous, ok := s.previous[key]
 		if !ok {
-			continue // Newly installed counter: establish its baseline.
+			if c.Bytes != 0 {
+				return nil, fmt.Errorf("new route counter %q already contains %d unaccounted bytes", key, c.Bytes)
+			}
+			continue // A newly installed, zeroed counter can safely join the baseline.
 		}
 		if previous.ClientIP != c.ClientIP || previous.Direction != c.Direction {
 			return nil, fmt.Errorf("route counter identity changed for %q", key)
