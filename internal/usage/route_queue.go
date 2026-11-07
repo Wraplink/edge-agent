@@ -1,8 +1,6 @@
 package usage
 
-import (
-	"fmt"
-)
+import "fmt"
 
 // QueueRouteDeltas converts measured per-client route intervals into the
 // existing backend usage report format and durably enqueues them.
@@ -28,12 +26,6 @@ func QueueRouteDeltas(outbox *Outbox, agentID string, deltas []RouteDelta) error
 		}
 		if err := report.Validate(); err != nil {
 			return fmt.Errorf("invalid route delta: %w", err)
-		}
-	}
-	for _, delta := range deltas {
-		ip := net.ParseIP(delta.ClientIP)
-		if ip == nil || ip.To4() == nil || !delta.EndedAt.After(delta.StartedAt) {
-			return fmt.Errorf("invalid route delta interval or client IP")
 		}
 	}
 	for _, delta := range deltas {
