@@ -92,7 +92,7 @@ func TestKernelPreroutingEstablishedTCPRevocation(t *testing.T) {
 	}
 	defer listener.Close()
 	cmd := exec.Command("ip", "netns", "exec", name, os.Args[0], "-test.run=^TestKernelPersistentTCPPeer$", "-test.v")
-	cmd.Env = append(os.Environ(), "WRAPLINK_PERSISTENT_TCP_PEER=1", "WRAPLINK_PEER_PORT=" + strconv.Itoa(listener.Addr().(*net.TCPAddr).Port))
+	cmd.Env = append(os.Environ(), "WRAPLINK_PERSISTENT_TCP_PEER=1", "WRAPLINK_PEER_PORT="+strconv.Itoa(listener.Addr().(*net.TCPAddr).Port))
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
 		t.Fatal(err)
