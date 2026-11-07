@@ -35,7 +35,7 @@ func TestKernelPersistentTCPPeer(t *testing.T) {
 	fmt.Println("CONNECTED")
 	input := bufio.NewScanner(os.Stdin)
 	for input.Scan() {
-		if _, err := conn.Write([]byte(input.Text()+"\n")); err != nil {
+		if _, err := conn.Write([]byte(input.Text() + "\n")); err != nil {
 			fmt.Println("WRITE_FAILED")
 			continue
 		}
