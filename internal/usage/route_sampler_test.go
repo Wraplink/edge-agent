@@ -81,3 +81,25 @@ func TestRouteSamplerRejectsCounterOverflowWithoutAdvancing(t *testing.T) {
 		t.Fatal("overflow advanced baseline")
 	}
 }
+
+func TestRouteSamplerRejectsNewCounterWithExistingUsage(t *testing.T) {
+	s := NewRouteSampler()
+	now := time.Date(2026, 11, 6, 0, 0, 0, 0, time.UTC)
+	base := []RouteCounter{{Key: "existing", ClientIP: "192.0.2.1", Direction: "upload", Bytes: 10}}
+	if _, err := s.Sample(now, base); err != nil {
+		t.Fatal(err)
+	}
+	added := append(append([]RouteCounter{}, base...), RouteCounter{
+		Key: "new", ClientIP: "192.0.2.2", Direction: "download", Bytes: 25,
+	})
+	if _, err := s.Sample(now.Add(time.Minute), added); err == nil {
+		t.Fatal("new counter with preexisting bytes must fail closed")
+	}
+	if !s.last.Equal(now) {
+		t.Fatal("failed sample advanced baseline")
+	}
+	added[1].Bytes = 0
+	if _, err := s.Sample(now.Add(time.Minute), added); err != nil {
+		t.Fatalf("new zeroed counter should be accepted: %v", err)
+	}
+}
