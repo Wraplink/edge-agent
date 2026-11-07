@@ -35,7 +35,7 @@ func TestKernelPersistentTCPPeer(t *testing.T) {
 	fmt.Println("CONNECTED")
 	input := bufio.NewScanner(os.Stdin)
 	for input.Scan() {
-		if _, err := conn.Write([]byte(input.Text() + "\n")); err != nil {
+		if _, err := conn.Write([]byte(input.Text()+"\n")); err != nil {
 			fmt.Println("WRITE_FAILED")
 			continue
 		}
@@ -129,7 +129,7 @@ func TestKernelPreroutingEstablishedTCPRevocation(t *testing.T) {
 	defer receiver.Close()
 	send := func(payload string, allowed bool) {
 		t.Helper()
-		if _, err := io.WriteString(stdin, payload + "\n"); err != nil {
+		if _, err := io.WriteString(stdin, payload+"\n"); err != nil {
 			t.Fatal(err)
 		}
 		for {
@@ -147,7 +147,7 @@ func TestKernelPreroutingEstablishedTCPRevocation(t *testing.T) {
 		buf := make([]byte, 64)
 		count, err := receiver.Read(buf)
 		if allowed {
-			if err != nil || string(buf[:count]) != payload + "\n" {
+			if err != nil || string(buf[:count]) != payload+"\n" {
 				t.Fatalf("authorized TCP data missing: %q, %v", buf[:count], err)
 			}
 		} else if err == nil && count > 0 {
