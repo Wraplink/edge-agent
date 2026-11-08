@@ -7,16 +7,15 @@ backend:
   url: ${WRAPLINK_BACKEND_URL}
   control_key: ${NETWORK_CONTROL_KEY}
   # Dedicated IPv4 addresses assigned to this host; do not advertise unrelated IPs.
-  route_public_ips:
-    - "185.80.196.102"
+  route_public_ips: [] # Add dedicated route IPs when route capacity is enabled
 
 agent:
-  id: "edge-agent-01"
-  region: "eu-1"
+  id: "${EDGE_AGENT_ID}"
+  region: "${EDGE_AGENT_REGION}"
   interval: 10s
   capacity:
-    sni: 5000
-    route: 1000
+    sni: ${EDGE_SNI_CAPACITY}
+    route: ${EDGE_ROUTE_CAPACITY}
 
 edge:
   # Enable local host Full Route forwarding (default: false).
@@ -26,12 +25,10 @@ edge:
     - "1.1.1.1:53"
     - "8.8.8.8:53"
   addresses:
-    - "185.80.196.100"
-    - "185.80.196.101"
-    - "185.80.196.102"
+    - "${EDGE_PUBLIC_IP}"
   sni:
-    enabled: false
-    listen_address: "127.0.0.1:8443"
+    enabled: ${EDGE_SNI_ENABLED}
+    listen_address: "${EDGE_SNI_LISTEN_ADDRESS}"
     max_connections: 1024
     client_hello_timeout: 5s
 
