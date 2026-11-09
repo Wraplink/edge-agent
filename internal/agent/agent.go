@@ -689,8 +689,8 @@ func (a *Agent) syncBackendHealth(ctx context.Context, initial bool) {
   err=a.backendHealth.Register(ctx,a.id,a.region,a.sniCapacity,a.routeCapacity)
  } else {
   err=a.backendHealth.Heartbeat(ctx,a.id)
-  if err!=nil {
-   // Re-register after Backend restart or an unknown-agent response.
+  if inventory.IsUnknownAgent(err) {
+   // Re-register only when Backend reports the agent is unknown.
    err=a.backendHealth.Register(ctx,a.id,a.region,a.sniCapacity,a.routeCapacity)
   }
  }
