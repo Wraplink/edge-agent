@@ -73,9 +73,9 @@ func main() {
 	)
 
 	if cfg.Backend.URL != "" && cfg.Backend.ControlKey != "" {
-  service.SetBackendHealth(inventory.AgentHealthClient{URL:cfg.Backend.URL,Key:cfg.Backend.ControlKey})
- }
- service.SetUpstreamDNS(cfg.Edge.UpstreamDNS)
+		service.SetBackendHealth(inventory.AgentHealthClient{URL: cfg.Backend.URL, Key: cfg.Backend.ControlKey})
+	}
+	service.SetUpstreamDNS(cfg.Edge.UpstreamDNS)
 	if cfg.Agent.Capacity.Route > 0 {
 		service.SetRouteInventory(inventory.Client{URL: cfg.Backend.URL, Key: cfg.Backend.ControlKey}, cfg.Backend.RoutePublicIPs)
 	}

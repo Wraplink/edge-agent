@@ -46,7 +46,7 @@ type Agent struct {
 
 	dnsClient      *client.Client
 	routeInventory *inventory.Client
- backendHealth *inventory.AgentHealthClient
+	backendHealth  *inventory.AgentHealthClient
 	routePublicIPs []string
 
 	sniAllocator        allocator.SNIAllocator
@@ -137,7 +137,7 @@ func (a *Agent) Run(ctx context.Context) error {
 	}
 
 	a.syncRouteInventory(ctx)
- a.syncBackendHealth(ctx,true)
+	a.syncBackendHealth(ctx, true)
 	if err := a.cycle(ctx); err != nil {
 		log.Printf("agent: initial cycle failed: %v", err)
 	}
@@ -151,7 +151,7 @@ func (a *Agent) Run(ctx context.Context) error {
 			return ctx.Err()
 		case <-ticker.C:
 			a.syncRouteInventory(ctx)
-   a.syncBackendHealth(ctx,false)
+			a.syncBackendHealth(ctx, false)
 			if err := a.cycle(ctx); err != nil {
 				log.Printf("agent: cycle failed: %v", err)
 			}
@@ -683,16 +683,20 @@ func (a *Agent) resolveSNI(ctx context.Context, domain string) ([]net.IP, error)
 }
 
 func (a *Agent) syncBackendHealth(ctx context.Context, initial bool) {
- if a.backendHealth==nil {return}
- var err error
- if initial {
-  err=a.backendHealth.Register(ctx,a.id,a.region,a.sniCapacity,a.routeCapacity)
- } else {
-  err=a.backendHealth.Heartbeat(ctx,a.id)
-  if inventory.IsUnknownAgent(err) {
-   // Re-register only when Backend reports the agent is unknown.
-   err=a.backendHealth.Register(ctx,a.id,a.region,a.sniCapacity,a.routeCapacity)
-  }
- }
- if err!=nil {log.Printf("agent: Backend health synchronization failed: %v",err)}
+	if a.backendHealth == nil {
+		return
+	}
+	var err error
+	if initial {
+		err = a.backendHealth.Register(ctx, a.id, a.region, a.sniCapacity, a.routeCapacity)
+	} else {
+		err = a.backendHealth.Heartbeat(ctx, a.id)
+		if inventory.IsUnknownAgent(err) {
+			// Re-register only when Backend reports the agent is unknown.
+			err = a.backendHealth.Register(ctx, a.id, a.region, a.sniCapacity, a.routeCapacity)
+		}
+	}
+	if err != nil {
+		log.Printf("agent: Backend health synchronization failed: %v", err)
+	}
 }
