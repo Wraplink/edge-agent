@@ -81,3 +81,16 @@ Do not expose the diagnostics API publicly. See the central platform's `docs/con
 ## Backend agent-health registration
 
 The Edge Agent now registers and heartbeats directly with Backend using `backend.url` (`WRAPLINK_BACKEND_URL`) and `backend.control_key` (`NETWORK_CONTROL_KEY`). Configure both even for SNI-only agents before enabling Backend-authoritative DNS snapshots. The key must match Backend `NETWORK_CONTROL_SYNC_KEY`; no separate agent-health secret is required. Check agent logs for `Backend health synchronization failed` and verify `network_agent_health` in Backend PostgreSQL. For Full Route, both the route-IP inventory heartbeat and agent-health heartbeat must remain fresh. See [coordinated rollout](https://github.com/Wraplink/backend/blob/master/docs/agent-registry-rollout.md).
+
+## Optional private diagnostics API
+
+Diagnostics are disabled by default and are **not required** for Backend agent registration or heartbeat reporting. To enable them, generate a random secret (`openssl rand -hex 32`), add `WRAPLINK_DIAGNOSTICS_TOKEN=<secret>` to the untracked `.env.local`, and update `config.yml`:
+
+```yaml
+diagnostics:
+  enabled: true
+  listen_address: "127.0.0.1:9091"
+  token: "${WRAPLINK_DIAGNOSTICS_TOKEN}"
+```
+
+The shipped configuration uses an empty literal token and `enabled: false`; merely adding the environment variable does not enable diagnostics. Bind to loopback and access via SSH tunnel when needed; never publish this endpoint to the internet. Recreate the container after changing its configuration.
