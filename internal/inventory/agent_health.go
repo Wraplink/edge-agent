@@ -5,6 +5,7 @@ import (
  "context"
  "encoding/json"
  "fmt"
+ "errors"
  "io"
  "net/http"
  "strings"
@@ -13,6 +14,9 @@ import (
 
 // AgentHealthClient sends independent Backend heartbeats while the legacy
 // DNS Control lease protocol remains active.
+type HealthHTTPError struct { StatusCode int; Detail string }
+func (e *HealthHTTPError) Error() string { return fmt.Sprintf("backend agent health: HTTP %d: %s",e.StatusCode,e.Detail) }
+
 type AgentHealthClient struct {
  URL string
  Key string
@@ -33,7 +37,7 @@ func (c AgentHealthClient) post(ctx context.Context, path string, payload any) e
  defer resp.Body.Close()
  if resp.StatusCode!=http.StatusOK {
   body,_:=io.ReadAll(io.LimitReader(resp.Body,1024))
-  return fmt.Errorf("backend agent health %s: HTTP %d: %s",path,resp.StatusCode,string(body))
+  return &HealthHTTPError{StatusCode:resp.StatusCode,Detail:string(body)}
  }
  return nil
 }
@@ -46,4 +50,9 @@ func (c AgentHealthClient) Register(ctx context.Context,id,region string,sni,rou
 
 func (c AgentHealthClient) Heartbeat(ctx context.Context,id string) error {
  return c.post(ctx,"/api/v1/internal/network/agents/heartbeat",map[string]string{"agent_id":id})
+}
+
+func IsUnknownAgent(err error) bool {
+ var status *HealthHTTPError
+ return errors.As(err,&status) && status.StatusCode==http.StatusNotFound
 }
