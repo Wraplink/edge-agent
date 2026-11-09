@@ -7,6 +7,9 @@ services:
 
     restart: unless-stopped
 
+    # nftables netlink operations require effective CAP_NET_ADMIN at process startup.
+    # Docker's cap_add alone is insufficient with the image's non-root USER.
+    user: "0:0"
     network_mode: host
 
     cap_add:
