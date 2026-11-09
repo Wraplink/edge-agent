@@ -77,3 +77,7 @@ This container uses host networking and `NET_ADMIN`/`NET_RAW` privileges. Verify
 - After changing `.env.local`, recreate the container with `docker compose up -d --force-recreate`.
 
 Do not expose the diagnostics API publicly. See the central platform's `docs/control-api-https.md` for certificate and allowlist setup.
+
+## Backend agent-health registration
+
+The Edge Agent now registers and heartbeats directly with Backend using `backend.url` (`WRAPLINK_BACKEND_URL`) and `backend.control_key` (`NETWORK_CONTROL_KEY`). Configure both even for SNI-only agents before enabling Backend-authoritative DNS snapshots. The key must match Backend `NETWORK_CONTROL_SYNC_KEY`; no separate agent-health secret is required. Check agent logs for `Backend health synchronization failed` and verify `network_agent_health` in Backend PostgreSQL. For Full Route, both the route-IP inventory heartbeat and agent-health heartbeat must remain fresh. See [coordinated rollout](https://github.com/Wraplink/backend/blob/master/docs/agent-registry-rollout.md).
