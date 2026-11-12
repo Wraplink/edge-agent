@@ -10,11 +10,11 @@ import (
 // Upload and download may be updated concurrently by separate copy loops.
 // A snapshot must read both counters without racing with those writers.
 type sessionMeter struct {
-	mu         sync.Mutex
-	uploaded   uint64
-	downloaded uint64
-	checkpointAt time.Time
-	checkpointUpload uint64
+	mu                 sync.Mutex
+	uploaded           uint64
+	downloaded         uint64
+	checkpointAt       time.Time
+	checkpointUpload   uint64
 	checkpointDownload uint64
 }
 
