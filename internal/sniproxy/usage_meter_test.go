@@ -1,6 +1,7 @@
 package sniproxy
 
 import (
+	"errors"
 	"sync"
 	"testing"
 	"time"
@@ -81,5 +82,39 @@ func TestSessionMeterIncrementalCheckpoints(t *testing.T) {
 	}
 	if _, err := meter.checkpoint("198.51.100.1", middle); err == nil {
 		t.Fatal("repeated or backwards checkpoint must fail")
+	}
+}
+
+func TestCheckpointPersistRetriesWithoutLosingBytes(t *testing.T) {
+	var meter sessionMeter
+	start := time.Now().UTC()
+	if err := meter.checkpointPersist("198.51.100.1", start, func(SessionUsage) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	meter.addUpload(100)
+	meter.addDownload(200)
+	failure := errors.New("disk unavailable")
+	at := start.Add(time.Second)
+	if err := meter.checkpointPersist("198.51.100.1", at, func(got SessionUsage) error {
+		if got.UploadedBytes != 100 || got.DownloadedBytes != 200 {
+			t.Fatalf("unexpected failed interval: %+v", got)
+		}
+		return failure
+	}); !errors.Is(err, failure) {
+		t.Fatalf("expected persistence failure, got %v", err)
+	}
+	meter.addUpload(50)
+	var saved SessionUsage
+	if err := meter.checkpointPersist("198.51.100.1", at.Add(time.Second), func(got SessionUsage) error {
+		saved = got
+		return nil
+	}); err != nil {
+		t.Fatal(err)
+	}
+	if saved.UploadedBytes != 150 || saved.DownloadedBytes != 200 || !saved.StartedAt.Equal(start) {
+		t.Fatalf("failed checkpoint lost or duplicated bytes: %+v", saved)
+	}
+	if err := meter.checkpointPersist("198.51.100.1", at.Add(2*time.Second), nil); err == nil {
+		t.Fatal("nil persistence callback must fail")
 	}
 }
