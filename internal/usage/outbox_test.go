@@ -78,3 +78,29 @@ func TestSequenceReservationSurvivesRestartAndAcknowledgement(t *testing.T) {
 		t.Fatalf("sequence after restart = %d, %v", next, err)
 	}
 }
+
+func TestEnqueueNextPersistsSequenceAndReport(t *testing.T) {
+	dir := t.TempDir()
+	outbox, err := OpenOutbox(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().UTC()
+	report := Report{AgentID: "edge-1", ClientIP: "198.51.100.2", UploadedBytes: 42, StartedAt: start, EndedAt: start.Add(time.Second)}
+	sequence, err := outbox.EnqueueNext(report)
+	if err != nil || sequence != 1 {
+		t.Fatalf("first enqueue: sequence=%d err=%v", sequence, err)
+	}
+	reopened, err := OpenOutbox(dir)
+	if err != nil {
+		t.Fatal(err)
+	}
+	pending, err := reopened.Pending()
+	if err != nil || len(pending) != 1 || pending[0].Sequence != sequence || pending[0].UploadedBytes != 42 {
+		t.Fatalf("durable report: %+v err=%v", pending, err)
+	}
+	next, err := reopened.EnqueueNext(report)
+	if err != nil || next != 2 {
+		t.Fatalf("next sequence after restart: %d %v", next, err)
+	}
+}
