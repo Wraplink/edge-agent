@@ -3,6 +3,7 @@ package sniproxy
 import (
 	"sync"
 	"testing"
+	"time"
 )
 
 func TestSessionMeterCountsBothDirections(t *testing.T) {
@@ -52,5 +53,33 @@ func TestSessionMeterConcurrentSnapshots(t *testing.T) {
 	final := meter.snapshot("198.51.100.1")
 	if final.UploadedBytes != 2*iterations || final.DownloadedBytes != 3*iterations {
 		t.Fatalf("lost concurrent forwarded bytes: %+v", final)
+	}
+}
+
+func TestSessionMeterIncrementalCheckpoints(t *testing.T) {
+	var meter sessionMeter
+	start := time.Now().UTC()
+	first, err := meter.checkpoint("198.51.100.1", start)
+	if err != nil || first.UploadedBytes != 0 || first.DownloadedBytes != 0 {
+		t.Fatalf("initial checkpoint: %+v %v", first, err)
+	}
+	meter.addUpload(120)
+	meter.addDownload(250)
+	middle := start.Add(time.Second)
+	before, err := meter.checkpoint("198.51.100.1", middle)
+	if err != nil || before.UploadedBytes != 120 || before.DownloadedBytes != 250 || !before.StartedAt.Equal(start) {
+		t.Fatalf("first delta: %+v %v", before, err)
+	}
+	meter.addUpload(40)
+	meter.addDownload(70)
+	after, err := meter.checkpoint("198.51.100.1", middle.Add(time.Second))
+	if err != nil || after.UploadedBytes != 40 || after.DownloadedBytes != 70 || !after.StartedAt.Equal(middle) {
+		t.Fatalf("second delta: %+v %v", after, err)
+	}
+	if before.UploadedBytes+after.UploadedBytes != 160 || before.DownloadedBytes+after.DownloadedBytes != 320 {
+		t.Fatal("checkpoint deltas do not conserve measured bytes")
+	}
+	if _, err := meter.checkpoint("198.51.100.1", middle); err == nil {
+		t.Fatal("repeated or backwards checkpoint must fail")
 	}
 }
