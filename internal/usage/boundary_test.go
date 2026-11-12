@@ -40,4 +40,14 @@ func TestValidateBoundaryPartition(t *testing.T) {
 	if err := ValidateBoundaryPartition(original, before, after, boundary); err == nil {
 		t.Fatal("duplicate sequence must fail")
 	}
+	after.Sequence = 3
+	before.Sequence = original.Sequence
+	if err := ValidateBoundaryPartition(original, before, after, boundary); err == nil {
+		t.Fatal("reusing original sequence must fail")
+	}
+	before.Sequence = 2
+	after.Sequence = original.Sequence
+	if err := ValidateBoundaryPartition(original, before, after, boundary); err == nil {
+		t.Fatal("reusing original sequence for later interval must fail")
+	}
 }
