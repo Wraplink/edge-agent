@@ -278,16 +278,15 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 			}
 		}
 	}()
-	done := make(chan uint64, 1)
+	done := make(chan struct{}, 1)
 	go func() {
-		n, _ := io.Copy(upstream, raw)
+		_, _ = io.Copy(meteredWriter{destination: upstream, record: meter.addUpload}, raw)
 		_ = upstream.Close()
-		done <- uint64(n)
+		done <- struct{}{}
 	}()
-	received, _ := io.Copy(raw, upstream)
-	meter.addDownload(uint64(received))
+	_, _ = io.Copy(meteredWriter{destination: raw, record: meter.addDownload}, upstream)
 	_ = raw.Close()
-	meter.addUpload(<-done)
+	<-done
 }
 
 // clientHelloName parses SNI using Go's TLS ClientHello parser without
