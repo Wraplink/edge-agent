@@ -29,8 +29,8 @@ func ValidateBoundaryPartition(original Report, before Report, after Report, bou
 		!after.StartedAt.Equal(boundary) || !after.EndedAt.Equal(original.EndedAt) {
 		return fmt.Errorf("reports must exactly partition the original interval")
 	}
-	if before.Sequence == after.Sequence {
-		return fmt.Errorf("partition reports require distinct sequences")
+	if before.Sequence == after.Sequence || before.Sequence == original.Sequence || after.Sequence == original.Sequence {
+		return fmt.Errorf("original and partition reports require distinct sequences")
 	}
 	if before.UploadedBytes > original.UploadedBytes ||
 		after.UploadedBytes != original.UploadedBytes-before.UploadedBytes ||
