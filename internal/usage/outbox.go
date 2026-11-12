@@ -39,7 +39,6 @@ func OpenOutbox(dir string) (*Outbox, error) {
 	return o, nil
 }
 
-
 // EnqueueNext reserves a sequence and persists the report under the outbox
 // lock. It prevents other goroutines using this outbox from interleaving
 // sequence allocation with report publication. A failed enqueue may leave a
@@ -57,7 +56,7 @@ func (o *Outbox) EnqueueNext(report Report) (uint64, error) {
 		return 0, err
 	}
 	// Persist the monotonic sequence before publishing its report.
-	if err := o.reserveSequenceLocked(next); err != nil {
+	if _, err := o.reserveSequenceLocked(next); err != nil {
 		return 0, err
 	}
 	if err := o.enqueueLocked(report); err != nil {
