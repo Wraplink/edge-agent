@@ -23,12 +23,12 @@ func (m *sessionMeter) durableCheckpoint(agentID, clientIP string, at time.Time,
 			return nil
 		}
 		_, err := outbox.EnqueueNext(usage.Report{
-			AgentID: agentID,
-			ClientIP: clientIP,
-			UploadedBytes: measurement.UploadedBytes,
+			AgentID:         agentID,
+			ClientIP:        clientIP,
+			UploadedBytes:   measurement.UploadedBytes,
 			DownloadedBytes: measurement.DownloadedBytes,
-			StartedAt: measurement.StartedAt,
-			EndedAt: measurement.EndedAt,
+			StartedAt:       measurement.StartedAt,
+			EndedAt:         measurement.EndedAt,
 		})
 		return err
 	})
