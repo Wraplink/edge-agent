@@ -132,14 +132,8 @@ func main() {
 				if measurement.UploadedBytes == 0 && measurement.DownloadedBytes == 0 {
 					return
 				}
-				sequence, err := usageOutbox.ReserveSequence()
-				if err != nil {
-					log.Printf("CRITICAL: reserve usage sequence: %v", err)
-					reportAlert("usage_sequence_failed", "Unable to reserve usage sequence")
-					return
-				}
-				report := usage.Report{AgentID: cfg.Agent.ID, Sequence: sequence, ClientIP: measurement.ClientIP, UploadedBytes: measurement.UploadedBytes, DownloadedBytes: measurement.DownloadedBytes, StartedAt: measurement.StartedAt, EndedAt: measurement.EndedAt}
-				if err := usageOutbox.Enqueue(report); err != nil {
+				report := usage.Report{AgentID: cfg.Agent.ID, ClientIP: measurement.ClientIP, UploadedBytes: measurement.UploadedBytes, DownloadedBytes: measurement.DownloadedBytes, StartedAt: measurement.StartedAt, EndedAt: measurement.EndedAt}
+				if _, err := usageOutbox.EnqueueNext(report); err != nil {
 					log.Printf("CRITICAL: persist usage report: %v", err)
 					reportAlert("usage_persist_failed", "Unable to persist usage report")
 				}
