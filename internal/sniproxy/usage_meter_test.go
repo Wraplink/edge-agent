@@ -1,6 +1,9 @@
 package sniproxy
 
-import "testing"
+import (
+	"sync"
+	"testing"
+)
 
 func TestSessionMeterCountsBothDirections(t *testing.T) {
 	var meter sessionMeter
@@ -19,5 +22,35 @@ func TestSessionMeterEmptySession(t *testing.T) {
 	got := meter.snapshot("192.0.2.5")
 	if got.UploadedBytes != 0 || got.DownloadedBytes != 0 {
 		t.Fatalf("empty session must report zero bytes: %+v", got)
+	}
+}
+
+func TestSessionMeterConcurrentSnapshots(t *testing.T) {
+	var meter sessionMeter
+	const iterations = 1000
+	var writers sync.WaitGroup
+	writers.Add(2)
+	go func() {
+		defer writers.Done()
+		for i := 0; i < iterations; i++ {
+			meter.addUpload(2)
+		}
+	}()
+	go func() {
+		defer writers.Done()
+		for i := 0; i < iterations; i++ {
+			meter.addDownload(3)
+		}
+	}()
+	for i := 0; i < iterations; i++ {
+		snapshot := meter.snapshot("198.51.100.1")
+		if snapshot.UploadedBytes > 2*iterations || snapshot.DownloadedBytes > 3*iterations {
+			t.Fatalf("invalid cumulative snapshot: %+v", snapshot)
+		}
+	}
+	writers.Wait()
+	final := meter.snapshot("198.51.100.1")
+	if final.UploadedBytes != 2*iterations || final.DownloadedBytes != 3*iterations {
+		t.Fatalf("lost concurrent forwarded bytes: %+v", final)
 	}
 }
