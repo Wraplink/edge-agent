@@ -24,13 +24,13 @@ func MeasuredInterval(agentID, clientIP string, sequence uint64, start, end Coun
 		return Report{}, fmt.Errorf("counter reset across measured interval")
 	}
 	report := Report{
-		AgentID: agentID,
-		Sequence: sequence,
-		ClientIP: clientIP,
-		UploadedBytes: end.UploadedBytes - start.UploadedBytes,
+		AgentID:         agentID,
+		Sequence:        sequence,
+		ClientIP:        clientIP,
+		UploadedBytes:   end.UploadedBytes - start.UploadedBytes,
 		DownloadedBytes: end.DownloadedBytes - start.DownloadedBytes,
-		StartedAt: start.At,
-		EndedAt: end.At,
+		StartedAt:       start.At,
+		EndedAt:         end.At,
 	}
 	if err := report.Validate(); err != nil {
 		return Report{}, err
