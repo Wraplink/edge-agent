@@ -118,3 +118,48 @@ func TestCheckpointPersistRetriesWithoutLosingBytes(t *testing.T) {
 		t.Fatal("nil persistence callback must fail")
 	}
 }
+
+func TestCheckpointPersistSerializesConcurrentIntervals(t *testing.T) {
+	var meter sessionMeter
+	start := time.Now().UTC()
+	if err := meter.checkpointPersist("198.51.100.1", start, func(SessionUsage) error { return nil }); err != nil {
+		t.Fatal(err)
+	}
+	meter.addUpload(100)
+	const count = 16
+	var wg sync.WaitGroup
+	var mu sync.Mutex
+	intervals := make([]SessionUsage, 0, count)
+	errs := make(chan error, count)
+	for i := 1; i <= count; i++ {
+		at := start.Add(time.Duration(i) * time.Second)
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			err := meter.checkpointPersist("198.51.100.1", at, func(got SessionUsage) error {
+				mu.Lock()
+				intervals = append(intervals, got)
+				mu.Unlock()
+				return nil
+			})
+			if err != nil && err.Error() != "checkpoint time must increase" {
+				errs <- err
+			}
+		}()
+	}
+	wg.Wait()
+	close(errs)
+	for err := range errs {
+		t.Fatal(err)
+	}
+	var total uint64
+	for i, interval := range intervals {
+		total += interval.UploadedBytes
+		if i > 0 && !interval.StartedAt.Equal(intervals[i-1].EndedAt) {
+			t.Fatalf("noncontiguous persisted intervals: %+v", intervals)
+		}
+	}
+	if total != 100 || len(intervals) == 0 {
+		t.Fatalf("lost or duplicated bytes: intervals=%d total=%d", len(intervals), total)
+	}
+}
