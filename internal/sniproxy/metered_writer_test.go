@@ -3,9 +3,9 @@ package sniproxy
 import (
 	"bytes"
 	"errors"
- "sync"
- "time"
+	"sync"
 	"testing"
+	"time"
 )
 
 type partialWriter struct{}
@@ -39,39 +39,49 @@ func TestMeteredWriterCountsPartialWrite(t *testing.T) {
 }
 
 type blockedWrite struct {
- entered chan struct{}
- release chan struct{}
+	entered chan struct{}
+	release chan struct{}
 }
+
 func (w blockedWrite) Write(p []byte) (int, error) {
- close(w.entered)
- <-w.release
- return len(p), nil
+	close(w.entered)
+	<-w.release
+	return len(p), nil
 }
 
 // A checkpoint taking the exclusive gate must not observe forwarded bytes
 // before their counter update has completed.
 func TestMeteredWriterGateIncludesCounterUpdate(t *testing.T) {
- var gate sync.RWMutex
- entered := make(chan struct{})
- release := make(chan struct{})
- writeDone := make(chan struct{})
- var measured uint64
- writer := meteredWriter{destination: blockedWrite{entered, release}, record: func(n uint64) { measured += n }, gate: &gate}
- go func() { defer close(writeDone); _, _ = writer.Write([]byte("12345")) }()
- <-entered
- checkpointDone := make(chan uint64, 1)
- go func() { gate.Lock(); checkpointDone <- measured; gate.Unlock() }()
- select {
- case <-checkpointDone:
-  t.Fatal("checkpoint passed while destination write was unfinished")
- case <-time.After(20 * time.Millisecond):
- }
- close(release)
- <-writeDone
- select {
- case got := <-checkpointDone:
-  if got != 5 { t.Fatalf("checkpoint measured %d, want 5", got) }
- case <-time.After(time.Second):
-  t.Fatal("checkpoint did not complete")
- }
+	var gate sync.RWMutex
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	writeDone := make(chan struct{})
+	var measured uint64
+	writer := meteredWriter{destination: blockedWrite{entered, release}, record: func(n uint64) { measured += n }, gate: &gate}
+	go func() {
+		defer close(writeDone)
+		_, _ = writer.Write([]byte("12345"))
+	}()
+	<-entered
+	checkpointDone := make(chan uint64, 1)
+	go func() {
+		gate.Lock()
+		checkpointDone <- measured
+		gate.Unlock()
+	}()
+	select {
+	case <-checkpointDone:
+		t.Fatal("checkpoint passed while destination write was unfinished")
+	case <-time.After(20 * time.Millisecond):
+	}
+	close(release)
+	<-writeDone
+	select {
+	case got := <-checkpointDone:
+		if got != 5 {
+			t.Fatalf("checkpoint measured %d, want 5", got)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("checkpoint did not complete")
+	}
 }
