@@ -3,6 +3,8 @@ package sniproxy
 import (
 	"errors"
  "sync"
+ "sync/atomic"
+ "bytes"
 	"testing"
 	"time"
 )
@@ -143,4 +145,25 @@ func TestTrafficFencedTransitionBlocksForwardingUntilPromotion(t *testing.T) {
  case <-forwarded:
  case <-time.After(time.Second): t.Fatal("forwarding did not resume after promotion")
  }
+}
+
+func TestFailClosedTransitionRejectsWritesUntilSuccessfulRetry(t *testing.T) {
+ var meter sessionMeter
+ start := time.Now().UTC()
+ reporter, err := newIntervalReporter(&meter, "198.51.100.8", start, func(SessionUsage) error { return nil })
+ if err != nil { t.Fatal(err) }
+ var gate sync.RWMutex
+ var blocked atomic.Bool
+ fence, err := newFailClosedTransition(reporter, &gate, &blocked)
+ if err != nil { t.Fatal(err) }
+ var destination bytes.Buffer
+ writer := meteredWriter{destination: &destination, record: meter.addUpload, gate: &gate, blocked: &blocked}
+ if _, err := writer.Write([]byte("before")); err != nil { t.Fatal(err) }
+ if err := fence.transition(start.Add(time.Second), func() error { return errors.New("not applied") }, func() error { return nil }); err == nil { t.Fatal("expected acknowledgement failure") }
+ if !blocked.Load() { t.Fatal("failed transition did not block traffic") }
+ if n, err := writer.Write([]byte("rejected")); n != 0 || err == nil { t.Fatalf("forwarded while blocked: n=%d err=%v", n, err) }
+ if err := fence.transition(start.Add(2*time.Second), func() error { return nil }, func() error { return nil }); err != nil { t.Fatal(err) }
+ if blocked.Load() { t.Fatal("successful retry left traffic blocked") }
+ if _, err := writer.Write([]byte("after")); err != nil { t.Fatal(err) }
+ if got := destination.String(); got != "beforeafter" { t.Fatalf("unexpected forwarded bytes %q", got) }
 }
