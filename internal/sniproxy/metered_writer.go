@@ -1,19 +1,27 @@
 package sniproxy
 
-import "io"
+import (
+ "io"
+ "sync"
+)
 
 // meteredWriter records only bytes successfully accepted by the destination.
-// It permits cumulative counters to advance during long-lived TCP streams,
-// rather than waiting for io.Copy to finish.
+// When gate is set, it fences the destination write AND its counter update,
+// so a checkpoint cannot fall between the two operations.
 type meteredWriter struct {
-	destination io.Writer
-	record      func(uint64)
+ destination io.Writer
+ record func(uint64)
+ gate *sync.RWMutex
 }
 
 func (w meteredWriter) Write(p []byte) (int, error) {
-	n, err := w.destination.Write(p)
-	if n > 0 && w.record != nil {
-		w.record(uint64(n))
-	}
-	return n, err
+ if w.gate != nil {
+  w.gate.RLock()
+  defer w.gate.RUnlock()
+ }
+ n, err := w.destination.Write(p)
+ if n > 0 && w.record != nil {
+  w.record(uint64(n))
+ }
+ return n, err
 }
