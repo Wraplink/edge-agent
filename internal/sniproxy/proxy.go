@@ -5,6 +5,7 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"strings"
 	"sync"
@@ -277,7 +278,7 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 			if err := reporter.close(time.Now().UTC()); err != nil {
 				// A failed final checkpoint remains unacknowledged. The
 				// durable outbox cannot recover bytes only held in memory.
-				fmt.Printf("CRITICAL: final SNI usage checkpoint failed: %v\\n", err)
+				log.Printf("CRITICAL: final SNI usage checkpoint failed: %v", err)
 			}
 		} else if p.OnUsage != nil {
 			measurement := meter.snapshot(host)
