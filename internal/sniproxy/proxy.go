@@ -9,6 +9,7 @@ import (
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -241,6 +242,8 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	// Serializes forwarding writes with periodic checkpoints. Both directions
 	// share this gate so each checkpoint has a precise byte boundary.
 	var usageGate sync.RWMutex
+	// Once persistence fails, no forwarding write may proceed.
+	var usageBlocked atomic.Bool
 	var reporter *intervalReporter
 	var checkpointStop chan struct{}
 	var checkpointDone chan struct{}
@@ -266,6 +269,9 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 				case <-ticker.C:
 					usageGate.Lock()
 					err := reporter.flush(time.Now().UTC())
+					if err != nil {
+						usageBlocked.Store(true)
+					}
 					usageGate.Unlock()
 					if err != nil {
 						// Fail closed: never forward indefinitely when metering fails.
@@ -298,6 +304,10 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	}()
 	for len(hello) > 0 {
 		usageGate.RLock()
+		if usageBlocked.Load() {
+			usageGate.RUnlock()
+			return
+		}
 		n, err := upstream.Write(hello)
 		if err != nil || n == 0 {
 			usageGate.RUnlock()
@@ -336,7 +346,7 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	}()
 	done := make(chan struct{}, 1)
 	go func() {
-		_, _ = io.Copy(meteredWriter{destination: upstream, record: meter.addUpload, gate: &usageGate}, raw)
+		_, _ = io.Copy(meteredWriter{destination: upstream, record: meter.addUpload, gate: &usageGate, blocked: &usageBlocked}, raw)
 		_ = upstream.Close()
 		done <- struct{}{}
 	}()
