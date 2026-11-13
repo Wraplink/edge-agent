@@ -50,11 +50,15 @@ func TestSenderRetainsFailedReportAndRetries(t *testing.T) {
 
 func TestSenderFlushThroughDoesNotAcknowledgeLaterReports(t *testing.T) {
 	outbox, err := OpenOutbox(t.TempDir())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	start := time.Now().UTC()
 	for _, sequence := range []uint64{1, 2, 3} {
 		report := Report{AgentID: "edge-1", Sequence: sequence, ClientIP: "198.51.100.10", UploadedBytes: sequence, StartedAt: start, EndedAt: start.Add(time.Second)}
-		if err := outbox.Enqueue(report); err != nil { t.Fatal(err) }
+		if err := outbox.Enqueue(report); err != nil {
+			t.Fatal(err)
+		}
 	}
 	var received []string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -77,10 +81,14 @@ func TestSenderFlushThroughDoesNotAcknowledgeLaterReports(t *testing.T) {
 
 func TestSenderFlushThroughStopsAtBackendFailure(t *testing.T) {
 	outbox, err := OpenOutbox(t.TempDir())
-	if err != nil { t.Fatal(err) }
+	if err != nil {
+		t.Fatal(err)
+	}
 	start := time.Now().UTC()
 	for _, sequence := range []uint64{1, 2, 3} {
-		if err := outbox.Enqueue(Report{AgentID: "edge-1", Sequence: sequence, ClientIP: "198.51.100.10", StartedAt: start, EndedAt: start.Add(time.Second)}); err != nil { t.Fatal(err) }
+		if err := outbox.Enqueue(Report{AgentID: "edge-1", Sequence: sequence, ClientIP: "198.51.100.10", StartedAt: start, EndedAt: start.Add(time.Second)}); err != nil {
+			t.Fatal(err)
+		}
 	}
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Idempotency-Key") == "edge-1:2" {
