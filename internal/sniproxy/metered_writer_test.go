@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 )
@@ -83,5 +84,30 @@ func TestMeteredWriterGateIncludesCounterUpdate(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("checkpoint did not complete")
+	}
+}
+
+func TestMeteredWriterRejectsWritesAfterCheckpointFailure(t *testing.T) {
+	var gate sync.RWMutex
+	var blocked atomic.Bool
+	var destination bytes.Buffer
+	var measured uint64
+	writer := meteredWriter{
+		destination: &destination,
+		record:      func(n uint64) { measured += n },
+		gate:        &gate,
+		blocked:     &blocked,
+	}
+	if _, err := writer.Write([]byte("before")); err != nil {
+		t.Fatal(err)
+	}
+	gate.Lock()
+	blocked.Store(true)
+	gate.Unlock()
+	if n, err := writer.Write([]byte("after")); n != 0 || err == nil {
+		t.Fatalf("write succeeded after metering failure: n=%d err=%v", n, err)
+	}
+	if got := destination.String(); got != "before" || measured != uint64(len("before")) {
+		t.Fatalf("blocked write changed traffic accounting: data=%q measured=%d", got, measured)
 	}
 }
