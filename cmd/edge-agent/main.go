@@ -128,14 +128,28 @@ func main() {
 			ClientHelloTimeout: cfg.Edge.SNI.ClientHelloTimeout,
 		}
 		if usageOutbox != nil {
-			proxy.OnUsage = func(measurement sniproxy.SessionUsage) {
+			persistUsage := func(measurement sniproxy.SessionUsage) error {
 				if measurement.UploadedBytes == 0 && measurement.DownloadedBytes == 0 {
-					return
+					return nil
 				}
 				report := usage.Report{AgentID: cfg.Agent.ID, ClientIP: measurement.ClientIP, UploadedBytes: measurement.UploadedBytes, DownloadedBytes: measurement.DownloadedBytes, StartedAt: measurement.StartedAt, EndedAt: measurement.EndedAt}
 				if _, err := usageOutbox.EnqueueNext(report); err != nil {
 					log.Printf("CRITICAL: persist usage report: %v", err)
 					reportAlert("usage_persist_failed", "Unable to persist usage report")
+					return err
+				}
+				return nil
+			}
+			// Explicit opt-in until backend entitlement-transition fencing is wired.
+			// The default retains session-close accounting and avoids a silent
+			// change in the production reporting protocol.
+			if os.Getenv("WRAPLINK_EXPERIMENTAL_SNI_USAGE_CHECKPOINTS") == "true" {
+				proxy.PersistUsage = persistUsage
+				proxy.UsageInterval = 5 * time.Second
+				log.Printf("WARNING: experimental periodic SNI usage checkpoints enabled")
+			} else {
+				proxy.OnUsage = func(measurement sniproxy.SessionUsage) {
+					_ = persistUsage(measurement)
 				}
 			}
 		}
