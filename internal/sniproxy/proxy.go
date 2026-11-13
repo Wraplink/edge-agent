@@ -309,12 +309,15 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 			return
 		}
 		n, err := upstream.Write(hello)
+		if n > 0 {
+			// A partial write may return both bytes and an error.
+			// Account for the bytes accepted before ending the session.
+			meter.addUpload(uint64(n))
+		}
+		usageGate.RUnlock()
 		if err != nil || n == 0 {
-			usageGate.RUnlock()
 			return
 		}
-		meter.addUpload(uint64(n))
-		usageGate.RUnlock()
 		hello = hello[n:]
 	}
 	// Recheck authorization during an established session so expiry and
