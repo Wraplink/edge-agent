@@ -1,9 +1,6 @@
 package usage
 
-import (
-	"fmt"
-	"time"
-)
+import "fmt"
 
 // MeasuredBoundaryPartition constructs two reports using three independently
 // observed cumulative counter checkpoints. It does not interpolate traffic by
