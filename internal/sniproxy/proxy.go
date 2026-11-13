@@ -302,19 +302,11 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 			p.OnUsage(measurement)
 		}
 	}()
+	// Use the same gated, fail-closed writer for the initial ClientHello
+	// and subsequent streaming traffic. This also counts partial writes.
+	helloWriter := meteredWriter{destination: upstream, record: meter.addUpload, gate: &usageGate, blocked: &usageBlocked}
 	for len(hello) > 0 {
-		usageGate.RLock()
-		if usageBlocked.Load() {
-			usageGate.RUnlock()
-			return
-		}
-		n, err := upstream.Write(hello)
-		if n > 0 {
-			// A partial write may return both bytes and an error.
-			// Account for the bytes accepted before ending the session.
-			meter.addUpload(uint64(n))
-		}
-		usageGate.RUnlock()
+		n, err := helloWriter.Write(hello)
 		if err != nil || n == 0 {
 			return
 		}
