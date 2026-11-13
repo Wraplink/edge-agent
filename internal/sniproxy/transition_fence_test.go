@@ -2,6 +2,7 @@ package sniproxy
 
 import (
 	"errors"
+ "sync"
 	"testing"
 	"time"
 )
@@ -103,4 +104,43 @@ func TestTransitionFenceBlocksPromotionUntilUsageApplied(t *testing.T) {
 	if err := fence.transition(start.Add(3*time.Second), nil, promote); err == nil {
 		t.Fatal("missing acknowledgement must be rejected")
 	}
+}
+
+func TestTrafficFencedTransitionBlocksForwardingUntilPromotion(t *testing.T) {
+ var meter sessionMeter
+ start := time.Now().UTC()
+ reporter, err := newIntervalReporter(&meter, "198.51.100.8", start, func(SessionUsage) error { return nil })
+ if err != nil { t.Fatal(err) }
+ var gate sync.RWMutex
+ fence, err := newTrafficFencedTransition(reporter, &gate)
+ if err != nil { t.Fatal(err) }
+ meter.addUpload(10)
+ entered := make(chan struct{})
+ release := make(chan struct{})
+ finished := make(chan error, 1)
+ go func() {
+  finished <- fence.transition(start.Add(time.Second), func() error {
+   close(entered)
+   <-release
+   return nil
+  }, func() error { return nil })
+ }()
+ <-entered
+ forwarded := make(chan struct{})
+ go func() {
+  gate.RLock()
+  meter.addUpload(5)
+  gate.RUnlock()
+  close(forwarded)
+ }()
+ select {
+ case <-forwarded: t.Fatal("traffic advanced before promotion completed")
+ case <-time.After(20 * time.Millisecond):
+ }
+ close(release)
+ if err := <-finished; err != nil { t.Fatal(err) }
+ select {
+ case <-forwarded:
+ case <-time.After(time.Second): t.Fatal("forwarding did not resume after promotion")
+ }
 }
