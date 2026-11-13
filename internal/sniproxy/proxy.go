@@ -28,6 +28,8 @@ type UsageObserver func(SessionUsage)
 // Only explicitly registered destinations are routable.
 type Proxy struct {
 	OnUsage            UsageObserver
+	PersistUsage       func(SessionUsage) error
+	UsageInterval      time.Duration
 	Access             *Authorizer
 	DialTimeout        time.Duration
 	MaxConnections     int
@@ -235,8 +237,49 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	_ = raw.SetReadDeadline(time.Time{})
 	startedAt := time.Now().UTC()
 	meter := &sessionMeter{}
+	var reporter *intervalReporter
+	var checkpointStop chan struct{}
+	var checkpointDone chan struct{}
+	if p.PersistUsage != nil {
+		reporter, err = newIntervalReporter(meter, host, startedAt, p.PersistUsage)
+		if err != nil {
+			return
+		}
+		interval := p.UsageInterval
+		if interval <= 0 {
+			interval = 5 * time.Second
+		}
+		checkpointStop = make(chan struct{})
+		checkpointDone = make(chan struct{})
+		go func() {
+			defer close(checkpointDone)
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-checkpointStop:
+					return
+				case <-ticker.C:
+					if err := reporter.flush(time.Now().UTC()); err != nil {
+						// Fail closed: never forward indefinitely when metering fails.
+						_ = raw.Close()
+						_ = upstream.Close()
+						return
+					}
+				}
+			}
+		}()
+	}
 	defer func() {
-		if p.OnUsage != nil {
+		if reporter != nil {
+			close(checkpointStop)
+			<-checkpointDone
+			if err := reporter.close(time.Now().UTC()); err != nil {
+				// A failed final checkpoint remains unacknowledged. The
+				// durable outbox cannot recover bytes only held in memory.
+				fmt.Printf("CRITICAL: final SNI usage checkpoint failed: %v\\n", err)
+			}
+		} else if p.OnUsage != nil {
 			measurement := meter.snapshot(host)
 			measurement.StartedAt = startedAt
 			measurement.EndedAt = time.Now().UTC()
