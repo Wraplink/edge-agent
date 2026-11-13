@@ -238,6 +238,9 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	_ = raw.SetReadDeadline(time.Time{})
 	startedAt := time.Now().UTC()
 	meter := &sessionMeter{}
+	// Serializes forwarding writes with periodic checkpoints. Both directions
+	// share this gate so each checkpoint has a precise byte boundary.
+	var usageGate sync.RWMutex
 	var reporter *intervalReporter
 	var checkpointStop chan struct{}
 	var checkpointDone chan struct{}
@@ -261,7 +264,10 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 				case <-checkpointStop:
 					return
 				case <-ticker.C:
-					if err := reporter.flush(time.Now().UTC()); err != nil {
+					usageGate.Lock()
+					err := reporter.flush(time.Now().UTC())
+					usageGate.Unlock()
+					if err != nil {
 						// Fail closed: never forward indefinitely when metering fails.
 						_ = raw.Close()
 						_ = upstream.Close()
@@ -275,7 +281,10 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 		if reporter != nil {
 			close(checkpointStop)
 			<-checkpointDone
-			if err := reporter.close(time.Now().UTC()); err != nil {
+			usageGate.Lock()
+			err := reporter.close(time.Now().UTC())
+			usageGate.Unlock()
+			if err != nil {
 				// A failed final checkpoint remains unacknowledged. The
 				// durable outbox cannot recover bytes only held in memory.
 				log.Printf("CRITICAL: final SNI usage checkpoint failed: %v", err)
@@ -288,11 +297,14 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 		}
 	}()
 	for len(hello) > 0 {
+		usageGate.RLock()
 		n, err := upstream.Write(hello)
 		if err != nil || n == 0 {
+			usageGate.RUnlock()
 			return
 		}
 		meter.addUpload(uint64(n))
+		usageGate.RUnlock()
 		hello = hello[n:]
 	}
 	// Recheck authorization during an established session so expiry and
@@ -324,11 +336,11 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	}()
 	done := make(chan struct{}, 1)
 	go func() {
-		_, _ = io.Copy(meteredWriter{destination: upstream, record: meter.addUpload}, raw)
+		_, _ = io.Copy(meteredWriter{destination: upstream, record: meter.addUpload, gate: &usageGate}, raw)
 		_ = upstream.Close()
 		done <- struct{}{}
 	}()
-	_, _ = io.Copy(meteredWriter{destination: raw, record: meter.addDownload}, upstream)
+	_, _ = io.Copy(meteredWriter{destination: raw, record: meter.addDownload, gate: &usageGate}, upstream)
 	_ = raw.Close()
 	<-done
 }
