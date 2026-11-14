@@ -128,20 +128,34 @@ func main() {
 			ClientHelloTimeout: cfg.Edge.SNI.ClientHelloTimeout,
 		}
 		if usageOutbox != nil {
-			proxy.OnUsage = func(measurement sniproxy.SessionUsage) {
+			persistUsage := func(measurement sniproxy.SessionUsage) error {
 				if measurement.UploadedBytes == 0 && measurement.DownloadedBytes == 0 {
-					return
+					return nil
 				}
-				sequence, err := usageOutbox.ReserveSequence()
-				if err != nil {
-					log.Printf("CRITICAL: reserve usage sequence: %v", err)
-					reportAlert("usage_sequence_failed", "Unable to reserve usage sequence")
-					return
-				}
-				report := usage.Report{AgentID: cfg.Agent.ID, Sequence: sequence, ClientIP: measurement.ClientIP, UploadedBytes: measurement.UploadedBytes, DownloadedBytes: measurement.DownloadedBytes, StartedAt: measurement.StartedAt, EndedAt: measurement.EndedAt}
-				if err := usageOutbox.Enqueue(report); err != nil {
+				report := usage.Report{AgentID: cfg.Agent.ID, ClientIP: measurement.ClientIP, UploadedBytes: measurement.UploadedBytes, DownloadedBytes: measurement.DownloadedBytes, StartedAt: measurement.StartedAt, EndedAt: measurement.EndedAt}
+				if _, err := usageOutbox.EnqueueNext(report); err != nil {
 					log.Printf("CRITICAL: persist usage report: %v", err)
 					reportAlert("usage_persist_failed", "Unable to persist usage report")
+					return err
+				}
+				return nil
+			}
+			// Explicit opt-in until backend entitlement-transition fencing is wired.
+			// The default retains session-close accounting and avoids a silent
+			// change in the production reporting protocol.
+			if os.Getenv("WRAPLINK_EXPERIMENTAL_SNI_USAGE_CHECKPOINTS") == "true" {
+				proxy.PersistUsage = persistUsage
+				proxy.UsageInterval = 5 * time.Second
+				log.Printf("WARNING: experimental periodic SNI usage checkpoints enabled")
+			} else {
+				proxy.OnUsage = func(measurement sniproxy.SessionUsage) {
+					if err := persistUsage(measurement); err != nil {
+						// Session-close persistence is the last opportunity to
+						// enqueue this in-memory measurement. Never hide a loss.
+						log.Printf("CRITICAL: final SNI usage was not persisted: client_ip=%s uploaded=%d downloaded=%d err=%v",
+							measurement.ClientIP, measurement.UploadedBytes, measurement.DownloadedBytes, err)
+						reportAlert("usage_persist_failed", "Final SNI usage measurement could not be persisted")
+					}
 				}
 			}
 		}

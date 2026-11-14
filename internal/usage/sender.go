@@ -13,6 +13,15 @@ type Sender struct {
 }
 
 func (s Sender) Flush(ctx context.Context) (int, error) {
+	return s.FlushThrough(ctx, ^uint64(0))
+}
+
+// FlushThrough confirms backend ingestion of all pending reports up to the
+// specified sequence. A transition must use the last sequence from its
+// checkpoint, and must fence writes until this call and promotion complete.
+// Successful Submit means backend accepted the report; it is not a substitute
+// for verifying entitlement generation at the subscription boundary.
+func (s Sender) FlushThrough(ctx context.Context, sequence uint64) (int, error) {
 	if s.Outbox == nil {
 		return 0, fmt.Errorf("usage outbox is required")
 	}
@@ -22,6 +31,9 @@ func (s Sender) Flush(ctx context.Context) (int, error) {
 	}
 	sent := 0
 	for _, report := range pending {
+		if report.Sequence > sequence {
+			break
+		}
 		if err := ctx.Err(); err != nil {
 			return sent, err
 		}

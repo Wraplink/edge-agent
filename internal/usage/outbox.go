@@ -39,6 +39,32 @@ func OpenOutbox(dir string) (*Outbox, error) {
 	return o, nil
 }
 
+// EnqueueNext reserves a sequence and persists the report under the outbox
+// lock. It prevents other goroutines using this outbox from interleaving
+// sequence allocation with report publication. A failed enqueue may leave a
+// sequence gap; it never silently retries with a different report identity.
+// This is not an atomic transaction with an external traffic counter.
+func (o *Outbox) EnqueueNext(report Report) (uint64, error) {
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if o.sequence == ^uint64(0) {
+		return 0, fmt.Errorf("usage sequence exhausted")
+	}
+	next := o.sequence + 1
+	report.Sequence = next
+	if err := report.Validate(); err != nil {
+		return 0, err
+	}
+	// Persist the monotonic sequence before publishing its report.
+	if _, err := o.reserveSequenceLocked(next); err != nil {
+		return 0, err
+	}
+	if err := o.enqueueLocked(report); err != nil {
+		return 0, err
+	}
+	return next, nil
+}
+
 func (o *Outbox) filename(sequence uint64) string {
 	return filepath.Join(o.dir, fmt.Sprintf("%020d.json", sequence))
 }
@@ -51,7 +77,10 @@ func (o *Outbox) ReserveSequence() (uint64, error) {
 	if o.sequence == ^uint64(0) {
 		return 0, fmt.Errorf("usage sequence exhausted")
 	}
-	next := o.sequence + 1
+	return o.reserveSequenceLocked(o.sequence + 1)
+}
+
+func (o *Outbox) reserveSequenceLocked(next uint64) (uint64, error) {
 	temp, err := os.CreateTemp(o.dir, ".sequence-*")
 	if err != nil {
 		return 0, err
@@ -84,6 +113,10 @@ func (o *Outbox) Enqueue(report Report) error {
 	}
 	o.mu.Lock()
 	defer o.mu.Unlock()
+	return o.enqueueLocked(report)
+}
+
+func (o *Outbox) enqueueLocked(report Report) error {
 	path := o.filename(report.Sequence)
 	if _, err := os.Stat(path); err == nil {
 		return fmt.Errorf("usage sequence %d already exists", report.Sequence)
