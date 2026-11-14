@@ -149,7 +149,13 @@ func main() {
 				log.Printf("WARNING: experimental periodic SNI usage checkpoints enabled")
 			} else {
 				proxy.OnUsage = func(measurement sniproxy.SessionUsage) {
-					_ = persistUsage(measurement)
+					if err := persistUsage(measurement); err != nil {
+						// Session-close persistence is the last opportunity to
+						// enqueue this in-memory measurement. Never hide a loss.
+						log.Printf("CRITICAL: final SNI usage was not persisted: client_ip=%s uploaded=%d downloaded=%d err=%v",
+							measurement.ClientIP, measurement.UploadedBytes, measurement.DownloadedBytes, err)
+						reportAlert("usage_persist_failed", "Final SNI usage measurement could not be persisted")
+					}
 				}
 			}
 		}
