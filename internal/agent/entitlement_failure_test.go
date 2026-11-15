@@ -55,3 +55,29 @@ func TestObserverFailureRevokesAndInvalidatesEntitlementRevision(t *testing.T) {
 		t.Fatal("failed revision must be retried")
 	}
 }
+
+func TestConflictingIPOwnersRevokeEdgeAccess(t *testing.T) {
+	dataplane := &fakeDataplane{}
+	a := &Agent{
+		dataplane:             dataplane,
+		entitlementConfigured: true,
+		entitlementEnforced:   true,
+		entitlementRevision:   5,
+		entitlements: map[string]client.AccessGrant{
+			"203.0.113.10": {ClientIP: "203.0.113.10"},
+		},
+	}
+	grants := []client.AccessGrant{
+		{EntitlementID: "ent-1", SubscriptionID: "sub-1", ClientIP: "203.0.113.10"},
+		{EntitlementID: "ent-2", SubscriptionID: "sub-2", ClientIP: "203.0.113.10"},
+	}
+	if err := a.replaceEntitlements(context.Background(), true, 6, grants); err == nil {
+		t.Fatal("conflicting IP owners must be rejected")
+	}
+	if !dataplane.enforced || len(dataplane.grants) != 0 {
+		t.Fatalf("conflicting grants must revoke kernel access: %+v", dataplane.grants)
+	}
+	if a.entitlementConfigured || a.entitlementRevision != 0 || len(a.entitlements) != 0 {
+		t.Fatal("conflicting snapshot must not be acknowledged")
+	}
+}
