@@ -81,3 +81,44 @@ func TestConflictingIPOwnersRevokeEdgeAccess(t *testing.T) {
 		t.Fatal("conflicting snapshot must not be acknowledged")
 	}
 }
+
+type partiallyFailingDataplane struct {
+	calls  int
+	grants []client.AccessGrant
+}
+
+func (f *partiallyFailingDataplane) Apply(context.Context, client.Lease) error { return nil }
+func (f *partiallyFailingDataplane) Remove(context.Context, string) error { return nil }
+func (f *partiallyFailingDataplane) ReplaceAccessGrants(_ context.Context, _ bool, grants []client.AccessGrant) error {
+	f.calls++
+	f.grants = append([]client.AccessGrant(nil), grants...)
+	if f.calls == 1 {
+		return errors.New("partial dataplane update")
+	}
+	return nil
+}
+
+func TestPartialDataplaneFailureRevokesAndRequiresResync(t *testing.T) {
+	dataplane := &partiallyFailingDataplane{}
+	a := &Agent{
+		dataplane:             dataplane,
+		entitlementConfigured: true,
+		entitlementEnforced:   true,
+		entitlementRevision:   7,
+		entitlements: map[string]client.AccessGrant{
+			"203.0.113.10": {ClientIP: "203.0.113.10"},
+		},
+	}
+	if err := a.replaceEntitlements(context.Background(), true, 8, []client.AccessGrant{{
+		EntitlementID: "ent-8",
+		ClientIP:      "203.0.113.11",
+	}}); err == nil {
+		t.Fatal("expected partial dataplane failure")
+	}
+	if dataplane.calls != 2 || len(dataplane.grants) != 0 {
+		t.Fatalf("partial dataplane update must be revoked: calls=%d grants=%+v", dataplane.calls, dataplane.grants)
+	}
+	if a.entitlementConfigured || a.entitlementRevision != 0 || len(a.entitlements) != 0 {
+		t.Fatal("failed dataplane revision must not be acknowledged")
+	}
+}
