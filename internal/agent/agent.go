@@ -510,10 +510,19 @@ func (a *Agent) replaceEntitlements(
 
 	if a.entitlementObserver != nil {
 		if err := a.entitlementObserver.Replace(enforced, grants); err != nil {
-			// The kernel allowlist is already updated. Revoke it on observer failure.
-			_ = a.dataplane.ReplaceAccessGrants(ctx, true, nil)
-			_ = a.entitlementObserver.Replace(true, nil)
-			return fmt.Errorf("synchronize SNI authorizer: %w", err)
+			// A partially applied revision must never be acknowledged. Clear both
+			// authorizers and mark local state unsynchronized for the next poll.
+			kernelErr := a.dataplane.ReplaceAccessGrants(ctx, true, nil)
+			sniErr := a.entitlementObserver.Replace(true, nil)
+			a.mu.Lock()
+			a.entitlementConfigured = false
+			a.entitlementEnforced = true
+			a.entitlementRevision = 0
+			a.entitlements = make(map[string]client.AccessGrant)
+			a.mu.Unlock()
+			return errors.Join(fmt.Errorf("synchronize SNI authorizer: %w", err),
+				wrapRevocationError("revoke kernel access", kernelErr),
+				wrapRevocationError("revoke SNI access", sniErr))
 		}
 	}
 
@@ -536,6 +545,13 @@ func (a *Agent) replaceEntitlements(
 		len(items),
 	)
 	return nil
+}
+
+func wrapRevocationError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", operation, err)
 }
 
 func (a *Agent) currentEntitlementRevision() uint64 {
