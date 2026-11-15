@@ -529,7 +529,22 @@ func (a *Agent) replaceEntitlements(
 	}
 
 	if err := a.dataplane.ReplaceAccessGrants(ctx, enforced, grants); err != nil {
-		return fmt.Errorf("apply entitlement revision %d: %w", revision, err)
+		// The dataplane may have partially applied a snapshot before failing.
+		// Revoke both authorizers and require a fresh revision on recovery.
+		kernelErr := a.dataplane.ReplaceAccessGrants(ctx, true, nil)
+		var sniErr error
+		if a.entitlementObserver != nil {
+			sniErr = a.entitlementObserver.Replace(true, nil)
+		}
+		a.mu.Lock()
+		a.entitlementConfigured = false
+		a.entitlementEnforced = true
+		a.entitlementRevision = 0
+		a.entitlements = make(map[string]client.AccessGrant)
+		a.mu.Unlock()
+		return errors.Join(fmt.Errorf("apply entitlement revision %d: %w", revision, err),
+			wrapRevocationError("revoke kernel access", kernelErr),
+			wrapRevocationError("revoke SNI access", sniErr))
 	}
 
 	if a.entitlementObserver != nil {
