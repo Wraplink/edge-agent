@@ -88,7 +88,7 @@ type partiallyFailingDataplane struct {
 }
 
 func (f *partiallyFailingDataplane) Apply(context.Context, client.Lease) error { return nil }
-func (f *partiallyFailingDataplane) Remove(context.Context, string) error { return nil }
+func (f *partiallyFailingDataplane) Remove(context.Context, string) error      { return nil }
 func (f *partiallyFailingDataplane) ReplaceAccessGrants(_ context.Context, _ bool, grants []client.AccessGrant) error {
 	f.calls++
 	f.grants = append([]client.AccessGrant(nil), grants...)
