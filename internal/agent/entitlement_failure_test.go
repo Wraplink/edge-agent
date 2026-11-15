@@ -25,19 +25,19 @@ func TestObserverFailureRevokesAndInvalidatesEntitlementRevision(t *testing.T) {
 	dataplane := &fakeDataplane{}
 	observer := &failingEntitlementObserver{}
 	a := &Agent{
-		dataplane: dataplane,
-		entitlementObserver: observer,
+		dataplane:             dataplane,
+		entitlementObserver:   observer,
 		entitlementConfigured: true,
-		entitlementEnforced: true,
-		entitlementRevision: 8,
+		entitlementEnforced:   true,
+		entitlementRevision:   8,
 		entitlements: map[string]client.AccessGrant{
 			"203.0.113.10": {ClientIP: "203.0.113.10"},
 		},
 	}
 	grants := []client.AccessGrant{{
 		EntitlementID: "ent-2",
-		ClientIP: "203.0.113.11",
-		ExpiresAt: time.Now().UTC().Add(time.Hour),
+		ClientIP:       "203.0.113.11",
+		ExpiresAt:     time.Now().UTC().Add(time.Hour),
 	}}
 	if err := a.replaceEntitlements(context.Background(), true, 9, grants); err == nil {
 		t.Fatal("expected observer synchronization failure")
