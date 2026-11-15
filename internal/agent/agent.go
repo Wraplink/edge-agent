@@ -504,16 +504,64 @@ func (a *Agent) replaceEntitlements(
 		return fmt.Errorf("dataplane manager is nil")
 	}
 
+	// Reject ambiguous source-IP ownership before updating either authorizer.
+	// A failed validation also revokes previously installed grants.
+	seen := make(map[string]client.AccessGrant, len(grants))
+	for _, grant := range grants {
+		if previous, ok := seen[grant.ClientIP]; ok &&
+			(previous.EntitlementID != grant.EntitlementID || previous.SubscriptionID != grant.SubscriptionID) {
+			kernelErr := a.dataplane.ReplaceAccessGrants(ctx, true, nil)
+			var sniErr error
+			if a.entitlementObserver != nil {
+				sniErr = a.entitlementObserver.Replace(true, nil)
+			}
+			a.mu.Lock()
+			a.entitlementConfigured = false
+			a.entitlementEnforced = true
+			a.entitlementRevision = 0
+			a.entitlements = make(map[string]client.AccessGrant)
+			a.mu.Unlock()
+			return errors.Join(fmt.Errorf("conflicting entitlement owners for client IP %s", grant.ClientIP),
+				wrapRevocationError("revoke kernel access", kernelErr),
+				wrapRevocationError("revoke SNI access", sniErr))
+		}
+		seen[grant.ClientIP] = grant
+	}
+
 	if err := a.dataplane.ReplaceAccessGrants(ctx, enforced, grants); err != nil {
-		return fmt.Errorf("apply entitlement revision %d: %w", revision, err)
+		// The dataplane may have partially applied a snapshot before failing.
+		// Revoke both authorizers and require a fresh revision on recovery.
+		kernelErr := a.dataplane.ReplaceAccessGrants(ctx, true, nil)
+		var sniErr error
+		if a.entitlementObserver != nil {
+			sniErr = a.entitlementObserver.Replace(true, nil)
+		}
+		a.mu.Lock()
+		a.entitlementConfigured = false
+		a.entitlementEnforced = true
+		a.entitlementRevision = 0
+		a.entitlements = make(map[string]client.AccessGrant)
+		a.mu.Unlock()
+		return errors.Join(fmt.Errorf("apply entitlement revision %d: %w", revision, err),
+			wrapRevocationError("revoke kernel access", kernelErr),
+			wrapRevocationError("revoke SNI access", sniErr))
 	}
 
 	if a.entitlementObserver != nil {
 		if err := a.entitlementObserver.Replace(enforced, grants); err != nil {
-			// The kernel allowlist is already updated. Revoke it on observer failure.
-			_ = a.dataplane.ReplaceAccessGrants(ctx, true, nil)
-			_ = a.entitlementObserver.Replace(true, nil)
-			return fmt.Errorf("synchronize SNI authorizer: %w", err)
+			// A partially applied revision must never be acknowledged. Clear both
+			// authorizers and mark local state unsynchronized for the next poll.
+			kernelErr := a.dataplane.ReplaceAccessGrants(ctx, true, nil)
+			sniErr := a.entitlementObserver.Replace(true, nil)
+			a.mu.Lock()
+			a.entitlementConfigured = false
+			a.entitlementEnforced = true
+			a.entitlementRevision = 0
+			a.entitlements = make(map[string]client.AccessGrant)
+			a.mu.Unlock()
+			return errors.Join(fmt.Errorf("synchronize SNI authorizer: %w", err),
+				wrapRevocationError("revoke kernel access", kernelErr),
+				wrapRevocationError("revoke SNI access", sniErr))
 		}
 	}
 
@@ -536,6 +584,13 @@ func (a *Agent) replaceEntitlements(
 		len(items),
 	)
 	return nil
+}
+
+func wrapRevocationError(operation string, err error) error {
+	if err == nil {
+		return nil
+	}
+	return fmt.Errorf("%s: %w", operation, err)
 }
 
 func (a *Agent) currentEntitlementRevision() uint64 {
