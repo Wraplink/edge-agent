@@ -36,7 +36,7 @@ func TestObserverFailureRevokesAndInvalidatesEntitlementRevision(t *testing.T) {
 	}
 	grants := []client.AccessGrant{{
 		EntitlementID: "ent-2",
-		ClientIP:       "203.0.113.11",
+		ClientIP:      "203.0.113.11",
 		ExpiresAt:     time.Now().UTC().Add(time.Hour),
 	}}
 	if err := a.replaceEntitlements(context.Background(), true, 9, grants); err == nil {
