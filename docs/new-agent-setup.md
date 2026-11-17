@@ -12,6 +12,29 @@ This procedure deploys **only** the edge-agent, not the central WrapLink platfor
 
 On the edge host, test `curl --noproxy '*' -Iv https://api.wraplink.ir` and `curl --noproxy '*' -Iv https://dns-api.wraplink.ir`. HTTP 401/404 can be normal without credentials; TLS validation must pass. A 403 suggests IP allowlisting.
 
+### Authorize the new agent on the central platform
+
+**Run these commands on the central platform host, not the edge host.** First determine the edge host's public egress IPv4 using the command above. Add it to the central platform's private `.env`, retaining the addresses of **all existing authorized agents**:
+
+```dotenv
+# Example: two authorized Edge Agent egress addresses
+EDGE_AGENT_ALLOWED_IPS=185.194.190.84,185.194.191.11
+```
+
+`EDGE_AGENT_ALLOWED_IPS` takes precedence over the legacy single-address `EDGE_AGENT_ALLOWED_IP`. The central setup script applies the list to both `api.wraplink.ir` and `dns-api.wraplink.ir` and retains `deny all` for all other sources. Source-IP authorization does **not** replace token authentication.
+
+If the control API HTTPS certificate already exists on the central host, apply the allowlist without renewing certificates:
+
+```bash
+cd /opt/wraplink/platform  # or your actual platform checkout
+set -a
+source .env
+set +a
+./scripts/setup-control-api.sh --skip-certbot
+```
+
+`--skip-certbot` requires the existing `letsencrypt/live/wraplink-control-api/` certificate and private key. For initial certificate issuance, follow [the platform HTTPS control API guide](https://github.com/Wraplink/platform/blob/main/docs/control-api-https.md) and configure `LE_EMAIL` instead of using the skip flag. Inspect `nginx/generated/api-vhosts/control-api.conf`, confirm each expected `allow` directive and `deny all`, and verify that Nginx validation and reload succeeded. Never replace the allowlist with `allow all` to troubleshoot registration.
+
 ## 2. Check out code
 
 ```bash
@@ -34,16 +57,18 @@ Example (replace values, never share credentials):
 ```dotenv
 EDGE_AGENT_ID=edge-eu-02
 EDGE_AGENT_REGION=eu-1
-EDGE_PUBLIC_IP=185.194.190.84
+EDGE_PUBLIC_IP=<this-agent-public-inbound-ip>
 EDGE_SNI_CAPACITY=5000
 EDGE_ROUTE_CAPACITY=0
 EDGE_SNI_ENABLED=true
 EDGE_SNI_LISTEN_ADDRESS=0.0.0.0:443
 DNS_CONTROL_API_URL=https://dns-api.wraplink.ir
-DNS_CONTROL_API_TOKEN=<secret>
+DNS_CONTROL_AGENT_TOKEN=<secret>
 WRAPLINK_BACKEND_URL=https://api.wraplink.ir
 NETWORK_CONTROL_KEY=<secret>
 ```
+
+`DNS_CONTROL_AGENT_TOKEN` must match the dedicated DNS Control registration token on the central platform. Do **not** substitute the general `DNS_CONTROL_API_TOKEN`. The `EDGE_PUBLIC_IP` is the inbound address advertised by the agent; it may differ from the **egress** IP seen by central Nginx when NAT or outbound proxies are in use.
 
 `config.yml` references these values with `${VARIABLE}`; the Go config loader expands them at runtime. Compose `env_file` passes `.env.local` into the container. Missing variables cause configuration failure. Set `edge.addresses` only to IPs assigned to this host; do not duplicate addresses.
 
@@ -70,8 +95,8 @@ This container uses host networking and `NET_ADMIN`/`NET_RAW` privileges. Verify
 ## 6. Troubleshooting
 
 - TLS/connection refused: test from the edge host; the central server may not support hairpin NAT to its own public IP.
-- HTTP 403: check edge **egress** IP against Nginx allowlist.
-- HTTP 401: verify agent token/control key, without printing secrets.
+- HTTP 403: check edge **egress** IP against central `EDGE_AGENT_ALLOWED_IPS`, then regenerate and reload the central API vhosts; inspect Nginx access/error logs. An HTTP 403 is not proof of a token mismatch.
+- HTTP 401: verify `DNS_CONTROL_AGENT_TOKEN` against DNS Control's registration token and `NETWORK_CONTROL_KEY` against Backend's network sync key, without printing secrets.
 - Port 443 conflict: `ss -lntp | grep ':443 '`.
 - Missing `${VARIABLE}`: update `.env.local`; do not disable strict config validation.
 - After changing `.env.local`, recreate the container with `docker compose up -d --force-recreate`.
