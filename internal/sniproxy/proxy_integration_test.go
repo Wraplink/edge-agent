@@ -52,10 +52,14 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 			return nil
 		},
 		UsageInterval: time.Hour,
-		OnSessionStart: func(s ActiveSession) { started <- s },
-		OnSessionEnd:   func(id string) { ended <- id },
-		Access:         auth,
-		targets:        map[string]string{"game.example": upstream.Addr().String()},
+		OnSessionStart: func(s ActiveSession) {
+			started <- s
+		},
+		OnSessionEnd: func(id string) {
+			ended <- id
+		},
+		Access:  auth,
+		targets: map[string]string{"game.example": upstream.Addr().String()},
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
@@ -64,7 +68,9 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
 	done := make(chan error, 1)
-	go func() { done <- proxy.Serve(ctx, listener) }()
+	go func() {
+		done <- proxy.Serve(ctx, listener)
+	}()
 	conn, err := net.DialTimeout("tcp", listener.Addr().String(), time.Second)
 	if err != nil {
 		t.Fatal(err)
