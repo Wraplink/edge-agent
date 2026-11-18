@@ -87,7 +87,6 @@ func TestPollOnceRejectsNonHTTPS(t *testing.T) {
 	}
 }
 
-
 func TestPollOnceRejectsInvalidBatchWithoutDisconnecting(t *testing.T) {
 	tests := []struct {
 		name string
@@ -148,7 +147,6 @@ func TestPollOnceDoesNotFollowCredentialRedirect(t *testing.T) {
 	}
 }
 
-
 func TestPollOnceRejectsBackendErrorsWithoutDisconnecting(t *testing.T) {
 	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusInternalServerError} {
 		t.Run(http.StatusText(status), func(t *testing.T) {
@@ -188,7 +186,6 @@ func TestPollOnceRejectsOversizedCommandBatch(t *testing.T) {
 		t.Fatalf("oversized batch triggered disconnect: %v", term.seen)
 	}
 }
-
 
 func TestPollOnceStopsAfterFailedAcknowledgement(t *testing.T) {
 	term := &fakeTerminator{found: true}
