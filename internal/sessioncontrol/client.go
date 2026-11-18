@@ -6,7 +6,7 @@ import (
  "errors"
  "fmt"
  "io"
- "regexp"
+ "github.com/google/uuid"
  "net/http"
  "net/url"
  "strings"
@@ -21,7 +21,11 @@ type Command struct {
  AgentSessionID string `json:"agentSessionId"`
 }
 type commandResponse struct { Commands []Command `json:"commands"` }
-var commandIDPattern=regexp.MustCompile(`^[0-9a-fA-F-]{36}$`)
+
+func validCommandID(value string)bool {
+ id,err:=uuid.Parse(value)
+ return err==nil && id!=uuid.Nil
+}
 
 // Client polls a trusted backend endpoint using a separately provisioned token.
 // It is not enabled automatically: agent registration and credentials must first
@@ -69,7 +73,7 @@ func (c *Client) PollOnce(ctx context.Context)error{
  // Reject malformed or duplicated commands before terminating anything.
  seen:=make(map[string]struct{},len(payload.Commands))
  for _,command:=range payload.Commands{
-  if !commandIDPattern.MatchString(command.CommandID) || command.AgentSessionID=="" {return errors.New("invalid disconnect instruction")}
+  if !validCommandID(command.CommandID) || command.AgentSessionID=="" {return errors.New("invalid disconnect instruction")}
   if _,duplicate:=seen[command.CommandID];duplicate{return errors.New("duplicate disconnect command")}
   seen[command.CommandID]=struct{}{}
  }
