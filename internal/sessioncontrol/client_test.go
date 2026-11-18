@@ -186,3 +186,51 @@ func TestPollOnceRejectsOversizedCommandBatch(t *testing.T) {
 		t.Fatalf("oversized batch triggered disconnect: %v", term.seen)
 	}
 }
+
+
+func TestPollOnceStopsAfterFailedAcknowledgement(t *testing.T) {
+	term := &fakeTerminator{found: true}
+	ackCount := 0
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodGet {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"commands":[{"commandId":"11111111-1111-4111-8111-111111111111","agentSessionId":"first"},{"commandId":"22222222-2222-4222-8222-222222222222","agentSessionId":"second"}]}`))
+			return
+		}
+		ackCount++
+		w.WriteHeader(http.StatusInternalServerError)
+	}))
+	defer server.Close()
+	client := &Client{BaseURL: server.URL, AgentID: "agent-01", Token: "secret", HTTP: server.Client(), Terminator: term}
+	if err := client.PollOnce(context.Background()); err == nil {
+		t.Fatal("expected acknowledgement failure")
+	}
+	if ackCount != 1 {
+		t.Fatalf("expected one failed acknowledgement, got %d", ackCount)
+	}
+	if len(term.seen) != 1 || term.seen[0] != "first" {
+		t.Fatalf("later command executed after failed acknowledgement: %v", term.seen)
+	}
+}
+
+func TestPollOnceRequiresAgentIdentityAndToken(t *testing.T) {
+	for _, tc := range []struct {
+		name string
+		agent string
+		token string
+	}{
+		{"missing agent", "", "secret"},
+		{"missing token", "agent-01", ""},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			term := &fakeTerminator{found: true}
+			client := &Client{BaseURL: "https://example.com", AgentID: tc.agent, Token: tc.token, Terminator: term}
+			if err := client.PollOnce(context.Background()); err == nil {
+				t.Fatal("expected configuration rejection")
+			}
+			if len(term.seen) != 0 {
+				t.Fatalf("unconfigured client disconnected session: %v", term.seen)
+			}
+		})
+	}
+}
