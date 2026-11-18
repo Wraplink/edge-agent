@@ -45,7 +45,13 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 	}
 	started := make(chan ActiveSession, 1)
 	ended := make(chan string, 1)
+	persisted := make(chan SessionUsage, 2)
 	proxy := &Proxy{
+		PersistUsage: func(usage SessionUsage) error {
+			persisted <- usage
+			return nil
+		},
+		UsageInterval: time.Hour,
 		OnSessionStart: func(s ActiveSession) { started <- s },
 		OnSessionEnd:   func(id string) { ended <- id },
 		Access:         auth,
@@ -104,6 +110,14 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 	}
 	if len(proxy.ActiveSessions()) != 0 {
 		t.Fatal("closed session remained active")
+	}
+	select {
+	case usage := <-persisted:
+		if usage.ClientIP != "127.0.0.1" || usage.UploadedBytes == 0 {
+			t.Fatalf("disconnect failed to persist metered ClientHello: %+v", usage)
+		}
+	case <-time.After(2 * time.Second):
+		t.Fatal("disconnect did not flush final usage checkpoint")
 	}
 	cancel()
 	select {
