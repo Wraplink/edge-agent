@@ -32,6 +32,7 @@ type ActiveSession struct {
  ConnectedAt time.Time
 }
 type SessionStartObserver func(ActiveSession)
+type SessionEndObserver func(string)
 
 // UsageObserver receives completed session measurements. Callbacks must not block.
 type UsageObserver func(SessionUsage)
@@ -41,6 +42,7 @@ type UsageObserver func(SessionUsage)
 type Proxy struct {
 	OnUsage            UsageObserver
  OnSessionStart     SessionStartObserver
+ OnSessionEnd       SessionEndObserver
 	Access             *Authorizer
 	DialTimeout        time.Duration
 	MaxConnections     int
@@ -280,6 +282,7 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
   p.mu.Lock()
   delete(p.sessionIDs,sessionID)
   p.mu.Unlock()
+  if p.OnSessionEnd!=nil {p.OnSessionEnd(sessionID)}
  }()
  _ = raw.SetReadDeadline(time.Time{})
  if p.OnSessionStart!=nil {
