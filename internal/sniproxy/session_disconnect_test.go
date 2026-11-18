@@ -58,7 +58,6 @@ func TestActiveSessionsSnapshotDoesNotExposeMutableState(t *testing.T) {
 	}
 }
 
-
 func TestDisconnectSessionClosesClientAndUpstream(t *testing.T) {
 	client, clientPeer := net.Pipe()
 	defer client.Close()
@@ -71,7 +70,7 @@ func TestDisconnectSessionClosesClientAndUpstream(t *testing.T) {
 	defer otherPeer.Close()
 
 	p := &Proxy{
-		sessionIDs: map[string]net.Conn{"target": client, "other": other},
+		sessionIDs:       map[string]net.Conn{"target": client, "other": other},
 		sessionUpstreams: map[string]net.Conn{"target": upstream},
 	}
 	if !p.DisconnectSession("target") {
