@@ -3,8 +3,8 @@ package sniproxy
 import (
 	"context"
 	"crypto/rand"
-	"encoding/hex"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"net"
