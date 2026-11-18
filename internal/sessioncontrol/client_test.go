@@ -21,10 +21,10 @@ func TestPollOnceAuthenticatesAndAcknowledges(t *testing.T){
     if r.Header.Get("Authorization")!="Bearer secret" || r.Header.Get("X-Network-Agent-ID")!="agent-01" {t.Error("missing agent authentication");w.WriteHeader(http.StatusUnauthorized);return}
     if r.Method==http.MethodGet {
      w.Header().Set("Content-Type","application/json")
-     _,_=w.Write([]byte(`{"commands":[{"commandId":"abc","agentSessionId":"session-1"}]}`))
+     _,_=w.Write([]byte(`{"commands":[{"commandId":"11111111-1111-4111-8111-111111111111","agentSessionId":"session-1"}]}`))
      return
     }
-    if r.URL.Path!="/api/v1/internal/network/sessions/commands/abc/ack" {t.Errorf("wrong ack path %s",r.URL.Path)}
+    if r.URL.Path!="/api/v1/internal/network/sessions/commands/11111111-1111-4111-8111-111111111111/ack" {t.Errorf("wrong ack path %s",r.URL.Path)}
     var body struct{Status string `json:"status"`;ErrorCode string `json:"errorCode"`}
     if err:=json.NewDecoder(r.Body).Decode(&body);err!=nil{t.Error(err)}
     acknowledged=body.Status
