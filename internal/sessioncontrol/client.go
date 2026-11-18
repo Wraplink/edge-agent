@@ -21,29 +21,7 @@ type Command struct {
  AgentSessionID string `json:"agentSessionId"`
 }
 type commandResponse struct { Commands []Command `json:"commands"` }
-var commandIDPattern=regexp.MustCompile(`^[0-9a-fA-F-]{36}package sessioncontrol
-
-import (
- "context"
- "encoding/json"
- "errors"
- "fmt"
- "io"
- "regexp"
- "net/http"
- "net/url"
- "strings"
- "time"
-)
-
-// Terminator closes one agent-local connection; it must not revoke other sessions.
-type Terminator interface { DisconnectSession(string) bool }
-
-type Command struct {
- CommandID string `json:"commandId"`
- AgentSessionID string `json:"agentSessionId"`
-}
-)
+var commandIDPattern=regexp.MustCompile(`^[0-9a-fA-F-]{36}$`)
 
 // Client polls a trusted backend endpoint using a separately provisioned token.
 // It is not enabled automatically: agent registration and credentials must first
