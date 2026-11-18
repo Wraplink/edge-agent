@@ -7,6 +7,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 )
 
 type fakeTerminator struct {
@@ -234,4 +235,29 @@ func TestPollOnceRequiresAgentIdentityAndToken(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestReportSessionsAuthenticated(t *testing.T) {
+ observed:=false
+ server:=httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter,r *http.Request){
+  if r.Method!=http.MethodPost || r.URL.Path!="/api/v1/internal/network/sessions/report" {t.Errorf("wrong report route: %s %s",r.Method,r.URL.Path)}
+  if r.Header.Get("Authorization")!="Bearer secret" || r.Header.Get("X-Network-Agent-ID")!="agent-01" {t.Error("missing agent credentials")}
+  var body struct {Sessions []map[string]any `json:"sessions"`}
+  if err:=json.NewDecoder(r.Body).Decode(&body);err!=nil {t.Error(err);return}
+  if len(body.Sessions)!=1 || body.Sessions[0]["sessionId"]!="session-1" {t.Errorf("unexpected payload: %+v",body)}
+  if _,exists:=body.Sessions[0]["userId"];exists {t.Error("agent must not assert user identity")}
+  observed=true
+ }))
+ defer server.Close()
+ now:=time.Now().UTC()
+ c:=Client{BaseURL:server.URL,AgentID:"agent-01",Token:"secret",Terminator:&fakeTerminator{},HTTP:server.Client()}
+ if err:=c.ReportSessions(context.Background(),[]SessionReport{{SessionID:"session-1",ClientIP:"192.0.2.10",Mode:"sni",Protocol:"tcp",ConnectedAt:now,LastActivityAt:now}});err!=nil {t.Fatal(err)}
+ if !observed {t.Fatal("report was not sent")}
+}
+
+func TestReportSessionsRejectsDuplicateBeforeHTTP(t *testing.T) {
+ now:=time.Now().UTC()
+ c:=Client{}
+ item:=SessionReport{SessionID:"same",ClientIP:"192.0.2.10",Mode:"sni",Protocol:"tcp",ConnectedAt:now,LastActivityAt:now}
+ if err:=c.ReportSessions(context.Background(),[]SessionReport{item,item});err==nil {t.Fatal("duplicate report accepted")}
 }
