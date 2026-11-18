@@ -191,9 +191,12 @@ func main() {
 						batch := make([]sessioncontrol.SessionReport, 0, end-start)
 						for _, session := range active[start:end] {
 							batch = append(batch, sessioncontrol.SessionReport{
-								SessionID: session.ID, ClientIP: session.ClientIP,
-								Mode: "sni", Protocol: "tcp",
-								ConnectedAt: session.ConnectedAt, LastActivityAt: maxSessionActivity(now, session.ConnectedAt),
+								SessionID:      session.ID,
+								ClientIP:       session.ClientIP,
+								Mode:           "sni",
+								Protocol:       "tcp",
+								ConnectedAt:    session.ConnectedAt,
+								LastActivityAt: maxSessionActivity(now, session.ConnectedAt),
 							})
 						}
 						if err := controller.ReportSessions(ctx, batch); err != nil && ctx.Err() == nil {
@@ -243,13 +246,13 @@ func main() {
 	}
 }
 
-// startAccessDiagnostics exposes an explicitly configured inspection API.
-// Operators must restrict network access and supply a strong token.
 // maxSessionActivity guards against wall-clock adjustments between session
 // creation and a periodic observation.
 func maxSessionActivity(observedAt, connectedAt time.Time) time.Time {
- if observedAt.Before(connectedAt) {return connectedAt}
- return observedAt
+\tif observedAt.Before(connectedAt) {
+		return connectedAt
+	}
+	return observedAt
 }
 
 func startAccessDiagnostics(ctx context.Context, authorizer *sniproxy.Authorizer, cfg config.DiagnosticsConfig) {
