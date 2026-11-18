@@ -93,6 +93,7 @@ func TestPollOnceRejectsInvalidBatchWithoutDisconnecting(t *testing.T) {
 		body string
 	}{
 		{"duplicate command", `{"commands":[{"commandId":"11111111-1111-4111-8111-111111111111","agentSessionId":"first"},{"commandId":"11111111-1111-4111-8111-111111111111","agentSessionId":"second"}]}`},
+		{"duplicate target session", `{"commands":[{"commandId":"11111111-1111-4111-8111-111111111111","agentSessionId":"first"},{"commandId":"22222222-2222-4222-8222-222222222222","agentSessionId":"first"}]}`},
 		{"invalid command ID", `{"commands":[{"commandId":"invalid","agentSessionId":"first"}]}`},
 		{"missing session ID", `{"commands":[{"commandId":"11111111-1111-4111-8111-111111111111","agentSessionId":""}]}`},
 		{"unknown field", `{"commands":[],"unexpected":true}`},
