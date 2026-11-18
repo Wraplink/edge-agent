@@ -85,3 +85,63 @@ func TestPollOnceRejectsNonHTTPS(t *testing.T) {
 		t.Fatalf("expected HTTPS rejection, got %v", err)
 	}
 }
+
+
+func TestPollOnceRejectsInvalidBatchWithoutDisconnecting(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+	}{
+		{"duplicate command", `{"commands":[{"commandId":"11111111-1111-4111-8111-111111111111","agentSessionId":"first"},{"commandId":"11111111-1111-4111-8111-111111111111","agentSessionId":"second"}]}`},
+		{"invalid command ID", `{"commands":[{"commandId":"invalid","agentSessionId":"first"}]}`},
+		{"missing session ID", `{"commands":[{"commandId":"11111111-1111-4111-8111-111111111111","agentSessionId":""}]}`},
+		{"unknown field", `{"commands":[],"unexpected":true}`},
+		{"trailing JSON", `{"commands":[]}{"commands":[]}`},
+	}
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			term := &fakeTerminator{found: true}
+			ackCount := 0
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				if r.Method != http.MethodGet {
+					ackCount++
+					w.WriteHeader(http.StatusOK)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tc.body))
+			}))
+			defer server.Close()
+			client := &Client{BaseURL: server.URL, AgentID: "agent-01", Token: "secret", HTTP: server.Client(), Terminator: term}
+			if err := client.PollOnce(context.Background()); err == nil {
+				t.Fatal("expected malformed batch rejection")
+			}
+			if len(term.seen) != 0 || ackCount != 0 {
+				t.Fatalf("malformed batch caused side effects: disconnects=%v acks=%d", term.seen, ackCount)
+			}
+		})
+	}
+}
+
+func TestPollOnceDoesNotFollowCredentialRedirect(t *testing.T) {
+	redirected := 0
+	target := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		redirected++
+		if r.Header.Get("Authorization") != "" {
+			t.Error("credentials leaked to redirect destination")
+		}
+	}))
+	defer target.Close()
+	source := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	defer source.Close()
+	term := &fakeTerminator{found: true}
+	client := &Client{BaseURL: source.URL, AgentID: "agent-01", Token: "secret", HTTP: source.Client(), Terminator: term}
+	if err := client.PollOnce(context.Background()); err == nil {
+		t.Fatal("expected redirect response to be rejected")
+	}
+	if redirected != 0 || len(term.seen) != 0 {
+		t.Fatalf("redirect followed or disconnect executed: redirects=%d disconnects=%v", redirected, term.seen)
+	}
+}
