@@ -2,6 +2,8 @@ package sniproxy
 
 import (
 	"context"
+ "crypto/rand"
+ "encoding/hex"
 	"crypto/tls"
 	"fmt"
 	"io"
@@ -36,6 +38,27 @@ type Proxy struct {
 	targets            map[string]string
 	sessions           map[string]map[net.Conn]struct{}
 	active             map[net.Conn]struct{}
+ sessionIDs         map[string]net.Conn
+}
+
+// DisconnectSession closes only the TCP connection associated with an opaque
+// agent-local session ID. It does not revoke a user's broader entitlement.
+func (p *Proxy) DisconnectSession(sessionID string) bool {
+ p.mu.RLock()
+ conn,ok:=p.sessionIDs[sessionID]
+ p.mu.RUnlock()
+ if !ok {return false}
+ _=conn.Close()
+ return true
+}
+
+// ActiveSessionIDs returns a snapshot of individually terminable SNI sessions.
+func (p *Proxy) ActiveSessionIDs() []string {
+ p.mu.RLock()
+ defer p.mu.RUnlock()
+ ids:=make([]string,0,len(p.sessionIDs))
+ for id:=range p.sessionIDs {ids=append(ids,id)}
+ return ids
 }
 
 func (p *Proxy) Register(domain, destination string) error {
@@ -232,7 +255,21 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 		return
 	}
 	defer upstream.Close()
-	_ = raw.SetReadDeadline(time.Time{})
+ // Register only after the upstream connection succeeds. Random identifiers
+ // are scoped to this process and cannot be selected by a remote client.
+ var randomID [16]byte
+ if _,err:=rand.Read(randomID[:]);err!=nil {return}
+ sessionID:=hex.EncodeToString(randomID[:])
+ p.mu.Lock()
+ if p.sessionIDs==nil {p.sessionIDs=make(map[string]net.Conn)}
+ p.sessionIDs[sessionID]=raw
+ p.mu.Unlock()
+ defer func(){
+  p.mu.Lock()
+  delete(p.sessionIDs,sessionID)
+  p.mu.Unlock()
+ }()
+ _ = raw.SetReadDeadline(time.Time{})
 	startedAt := time.Now().UTC()
 	meter := &sessionMeter{}
 	defer func() {
