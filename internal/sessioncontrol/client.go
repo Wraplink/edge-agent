@@ -6,6 +6,7 @@ import (
  "errors"
  "fmt"
  "io"
+ "regexp"
  "net/http"
  "net/url"
  "strings"
@@ -20,6 +21,29 @@ type Command struct {
  AgentSessionID string `json:"agentSessionId"`
 }
 type commandResponse struct { Commands []Command `json:"commands"` }
+var commandIDPattern=regexp.MustCompile(`^[0-9a-fA-F-]{36}package sessioncontrol
+
+import (
+ "context"
+ "encoding/json"
+ "errors"
+ "fmt"
+ "io"
+ "regexp"
+ "net/http"
+ "net/url"
+ "strings"
+ "time"
+)
+
+// Terminator closes one agent-local connection; it must not revoke other sessions.
+type Terminator interface { DisconnectSession(string) bool }
+
+type Command struct {
+ CommandID string `json:"commandId"`
+ AgentSessionID string `json:"agentSessionId"`
+}
+)
 
 // Client polls a trusted backend endpoint using a separately provisioned token.
 // It is not enabled automatically: agent registration and credentials must first
@@ -44,7 +68,10 @@ func (c *Client) request(ctx context.Context,method,path string,body string)(*ht
  if body!="" {req.Header.Set("Content-Type","application/json")}
  client:=c.HTTP
  if client==nil {client=&http.Client{Timeout:10*time.Second}}
- return client.Do(req)
+ // Prevent redirects from forwarding agent credentials.
+ guarded:=*client
+ guarded.CheckRedirect=func(*http.Request,[]*http.Request)error{return http.ErrUseLastResponse}
+ return guarded.Do(req)
 }
 
 // PollOnce processes only instructions returned by the authenticated backend.
@@ -58,9 +85,17 @@ func (c *Client) PollOnce(ctx context.Context)error{
  decoder:=json.NewDecoder(io.LimitReader(resp.Body,128<<10))
  decoder.DisallowUnknownFields()
  if err:=decoder.Decode(&payload);err!=nil{return err}
+ var trailing any
+ if err:=decoder.Decode(&trailing);err!=io.EOF{return errors.New("trailing command response data")}
  if len(payload.Commands)>100{return errors.New("too many disconnect commands")}
+ // Reject malformed or duplicated commands before terminating anything.
+ seen:=make(map[string]struct{},len(payload.Commands))
  for _,command:=range payload.Commands{
-  if command.CommandID=="" || command.AgentSessionID=="" {return errors.New("invalid disconnect instruction")}
+  if !commandIDPattern.MatchString(command.CommandID) || command.AgentSessionID=="" {return errors.New("invalid disconnect instruction")}
+  if _,duplicate:=seen[command.CommandID];duplicate{return errors.New("duplicate disconnect command")}
+  seen[command.CommandID]=struct{}{}
+ }
+ for _,command:=range payload.Commands{
   status:="failed"
   errorCode:="session_not_found"
   if c.Terminator.DisconnectSession(command.AgentSessionID) {status="succeeded";errorCode=""}
