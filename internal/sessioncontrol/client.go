@@ -123,6 +123,7 @@ func (c *Client) PollOnce(ctx context.Context) error {
 	}
 	// Validate the complete batch before terminating any connections.
 	seen := make(map[string]struct{}, len(payload.Commands))
+	seenSessions := make(map[string]struct{}, len(payload.Commands))
 	for _, command := range payload.Commands {
 		if !validCommandID(command.CommandID) || command.AgentSessionID == "" {
 			return errors.New("invalid disconnect instruction")
@@ -131,6 +132,10 @@ func (c *Client) PollOnce(ctx context.Context) error {
 			return errors.New("duplicate disconnect command")
 		}
 		seen[command.CommandID] = struct{}{}
+		if _, duplicate := seenSessions[command.AgentSessionID]; duplicate {
+			return errors.New("duplicate target session in command batch")
+		}
+		seenSessions[command.AgentSessionID] = struct{}{}
 	}
 	for _, command := range payload.Commands {
 		status := "failed"
