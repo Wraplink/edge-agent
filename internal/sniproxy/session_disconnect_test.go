@@ -57,3 +57,45 @@ func TestActiveSessionsSnapshotDoesNotExposeMutableState(t *testing.T) {
 		t.Fatal("snapshot mutated internal state")
 	}
 }
+
+
+func TestDisconnectSessionClosesClientAndUpstream(t *testing.T) {
+	client, clientPeer := net.Pipe()
+	defer client.Close()
+	defer clientPeer.Close()
+	upstream, upstreamPeer := net.Pipe()
+	defer upstream.Close()
+	defer upstreamPeer.Close()
+	other, otherPeer := net.Pipe()
+	defer other.Close()
+	defer otherPeer.Close()
+
+	p := &Proxy{
+		sessionIDs: map[string]net.Conn{"target": client, "other": other},
+		sessionUpstreams: map[string]net.Conn{"target": upstream},
+	}
+	if !p.DisconnectSession("target") {
+		t.Fatal("target session not found")
+	}
+	if _, err := clientPeer.Write([]byte("x")); err == nil {
+		t.Fatal("client peer remained writable")
+	}
+	if _, err := upstreamPeer.Write([]byte("x")); err == nil {
+		t.Fatal("upstream peer remained writable")
+	}
+	if err := other.SetWriteDeadline(time.Now().Add(time.Second)); err != nil {
+		t.Fatal(err)
+	}
+	done := make(chan error, 1)
+	go func() {
+		var buf [1]byte
+		_, err := otherPeer.Read(buf[:])
+		done <- err
+	}()
+	if _, err := other.Write([]byte("x")); err != nil {
+		t.Fatalf("unrelated connection closed: %v", err)
+	}
+	if err := <-done; err != nil {
+		t.Fatalf("unrelated connection failed: %v", err)
+	}
+}
