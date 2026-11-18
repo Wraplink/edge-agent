@@ -25,3 +25,15 @@ func TestDisconnectSessionIsTargeted(t *testing.T) {
  if _,err:=second.Write([]byte("x"));err!=nil {t.Fatalf("unrelated session closed: %v",err)}
  if err:=<-received;err!=nil {t.Fatalf("unrelated session read failed: %v",err)}
 }
+
+func TestActiveSessionsSnapshotDoesNotExposeMutableState(t *testing.T) {
+ now:=time.Now().UTC()
+ p:=&Proxy{sessionDetails:map[string]ActiveSession{
+  "one":{ID:"one",ClientIP:"192.0.2.10",Domain:"example.com",ConnectedAt:now},
+ }}
+ sessions:=p.ActiveSessions()
+ if len(sessions)!=1 || sessions[0].ID!="one" {t.Fatalf("unexpected sessions: %+v",sessions)}
+ sessions[0].ClientIP="203.0.113.1"
+ fresh:=p.ActiveSessions()
+ if fresh[0].ClientIP!="192.0.2.10" {t.Fatal("snapshot mutated internal state")}
+}
