@@ -25,7 +25,9 @@ jobs:
           if [ -n "$files" ]; then
             echo "The following files are not gofmt formatted:"
             echo "$files"
-            gofmt -d internal/dataplane/nftables.go
+            while IFS= read -r file; do
+              gofmt -d "$file"
+            done <<< "$files"
             exit 1
           fi
 
