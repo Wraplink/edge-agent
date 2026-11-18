@@ -20,6 +20,7 @@ import (
 	"github.com/wraplink/edge-agent/internal/config"
 	"github.com/wraplink/edge-agent/internal/dataplane"
 	"github.com/wraplink/edge-agent/internal/inventory"
+	"github.com/wraplink/edge-agent/internal/sessioncontrol"
 	"github.com/wraplink/edge-agent/internal/sniproxy"
 	"github.com/wraplink/edge-agent/internal/usage"
 )
@@ -144,6 +145,36 @@ func main() {
 					reportAlert("usage_persist_failed", "Unable to persist usage report")
 				}
 			}
+		}
+		// Session disconnect is opt-in until backend agent identity and
+		// credential provisioning are enabled. Never reuse the shared control key.
+		if token := os.Getenv("WRAPLINK_SESSION_AGENT_TOKEN"); token != "" {
+			if cfg.Backend.URL == "" {
+				log.Fatal("WRAPLINK_SESSION_AGENT_TOKEN requires backend URL")
+			}
+			if cfg.Agent.ID == "" {
+				log.Fatal("session control requires agent ID")
+			}
+			controller := &sessioncontrol.Client{
+				BaseURL: cfg.Backend.URL,
+				AgentID: cfg.Agent.ID,
+				Token: token,
+				Terminator: proxy,
+			}
+			go func() {
+				ticker := time.NewTicker(10 * time.Second)
+				defer ticker.Stop()
+				for {
+					if err := controller.PollOnce(ctx); err != nil && ctx.Err() == nil {
+						log.Printf("session disconnect poll failed: %v", err)
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+					}
+				}
+			}()
 		}
 		service.SetSNIForwarder(proxy)
 		go func() {
