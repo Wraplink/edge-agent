@@ -53,6 +53,7 @@ type Proxy struct {
 	sessions           map[string]map[net.Conn]struct{}
 	active             map[net.Conn]struct{}
 	sessionIDs         map[string]net.Conn
+	sessionUpstreams   map[string]net.Conn
 	sessionDetails     map[string]ActiveSession
 }
 
@@ -73,11 +74,15 @@ func (p *Proxy) ActiveSessions() []ActiveSession {
 func (p *Proxy) DisconnectSession(sessionID string) bool {
 	p.mu.RLock()
 	conn, ok := p.sessionIDs[sessionID]
+	upstream := p.sessionUpstreams[sessionID]
 	p.mu.RUnlock()
 	if !ok {
 		return false
 	}
 	_ = conn.Close()
+	if upstream != nil {
+		_ = upstream.Close()
+	}
 	return true
 }
 
@@ -303,11 +308,16 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 		p.sessionDetails = make(map[string]ActiveSession)
 	}
 	p.sessionIDs[sessionID] = raw
+	if p.sessionUpstreams == nil {
+		p.sessionUpstreams = make(map[string]net.Conn)
+	}
+	p.sessionUpstreams[sessionID] = upstream
 	p.sessionDetails[sessionID] = session
 	p.mu.Unlock()
 	defer func() {
 		p.mu.Lock()
 		delete(p.sessionIDs, sessionID)
+		delete(p.sessionUpstreams, sessionID)
 		delete(p.sessionDetails, sessionID)
 		p.mu.Unlock()
 		if p.OnSessionEnd != nil {
