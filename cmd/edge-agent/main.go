@@ -184,7 +184,9 @@ func main() {
 					active := proxy.ActiveSessions()
 					for start := 0; start < len(active); start += 100 {
 						end := start + 100
-						if end > len(active) { end = len(active) }
+						if end > len(active) {
+							end = len(active)
+						}
 						now := time.Now().UTC()
 						batch := make([]sessioncontrol.SessionReport, 0, end-start)
 						for _, session := range active[start:end] {
@@ -199,7 +201,8 @@ func main() {
 						}
 					}
 					select {
-					case <-ctx.Done(): return
+					case <-ctx.Done():
+						return
 					case <-ticker.C:
 					}
 				}
