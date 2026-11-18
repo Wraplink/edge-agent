@@ -47,3 +47,63 @@ func TestSenderRetainsFailedReportAndRetries(t *testing.T) {
 		t.Fatalf("acknowledged report remains: %+v %v", pending, err)
 	}
 }
+
+func TestSenderFlushThroughDoesNotAcknowledgeLaterReports(t *testing.T) {
+	outbox, err := OpenOutbox(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().UTC()
+	for _, sequence := range []uint64{1, 2, 3} {
+		report := Report{AgentID: "edge-1", Sequence: sequence, ClientIP: "198.51.100.10", UploadedBytes: sequence, StartedAt: start, EndedAt: start.Add(time.Second)}
+		if err := outbox.Enqueue(report); err != nil {
+			t.Fatal(err)
+		}
+	}
+	var received []string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		received = append(received, r.Header.Get("Idempotency-Key"))
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	sender := Sender{Outbox: outbox, Client: Client{URL: server.URL, Key: "secret"}}
+	if sent, err := sender.FlushThrough(context.Background(), 2); err != nil || sent != 2 {
+		t.Fatalf("bounded flush failed: sent=%d err=%v", sent, err)
+	}
+	pending, err := outbox.Pending()
+	if err != nil || len(pending) != 1 || pending[0].Sequence != 3 {
+		t.Fatalf("later report was acknowledged: %+v %v", pending, err)
+	}
+	if len(received) != 2 || received[0] != "edge-1:1" || received[1] != "edge-1:2" {
+		t.Fatalf("unexpected delivered reports: %+v", received)
+	}
+}
+
+func TestSenderFlushThroughStopsAtBackendFailure(t *testing.T) {
+	outbox, err := OpenOutbox(t.TempDir())
+	if err != nil {
+		t.Fatal(err)
+	}
+	start := time.Now().UTC()
+	for _, sequence := range []uint64{1, 2, 3} {
+		if err := outbox.Enqueue(Report{AgentID: "edge-1", Sequence: sequence, ClientIP: "198.51.100.10", StartedAt: start, EndedAt: start.Add(time.Second)}); err != nil {
+			t.Fatal(err)
+		}
+	}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("Idempotency-Key") == "edge-1:2" {
+			w.WriteHeader(http.StatusServiceUnavailable)
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	defer server.Close()
+	sender := Sender{Outbox: outbox, Client: Client{URL: server.URL, Key: "secret"}}
+	if sent, err := sender.FlushThrough(context.Background(), 3); err == nil || sent != 1 {
+		t.Fatalf("expected failed second report: sent=%d err=%v", sent, err)
+	}
+	pending, err := outbox.Pending()
+	if err != nil || len(pending) != 2 || pending[0].Sequence != 2 || pending[1].Sequence != 3 {
+		t.Fatalf("failed or later reports were acknowledged: %+v %v", pending, err)
+	}
+}
