@@ -48,8 +48,8 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 	proxy := &Proxy{
 		OnSessionStart: func(s ActiveSession) { started <- s },
 		OnSessionEnd:   func(id string) { ended <- id },
-		Access:        auth,
-		targets:       map[string]string{"game.example": upstream.Addr().String()},
+		Access:         auth,
+		targets:        map[string]string{"game.example": upstream.Addr().String()},
 	}
 	listener, err := net.Listen("tcp", "127.0.0.1:0")
 	if err != nil {
