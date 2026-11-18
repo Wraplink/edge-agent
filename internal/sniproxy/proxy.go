@@ -5,9 +5,11 @@ import (
 	"crypto/tls"
 	"fmt"
 	"io"
+	"log"
 	"net"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 )
 
@@ -28,6 +30,8 @@ type UsageObserver func(SessionUsage)
 // Only explicitly registered destinations are routable.
 type Proxy struct {
 	OnUsage            UsageObserver
+	PersistUsage       func(SessionUsage) error
+	UsageInterval      time.Duration
 	Access             *Authorizer
 	DialTimeout        time.Duration
 	MaxConnections     int
@@ -235,20 +239,77 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	_ = raw.SetReadDeadline(time.Time{})
 	startedAt := time.Now().UTC()
 	meter := &sessionMeter{}
+	// Serializes forwarding writes with periodic checkpoints. Both directions
+	// share this gate so each checkpoint has a precise byte boundary.
+	var usageGate sync.RWMutex
+	// Once persistence fails, no forwarding write may proceed.
+	var usageBlocked atomic.Bool
+	var reporter *intervalReporter
+	var checkpointStop chan struct{}
+	var checkpointDone chan struct{}
+	if p.PersistUsage != nil {
+		reporter, err = newIntervalReporter(meter, host, startedAt, p.PersistUsage)
+		if err != nil {
+			return
+		}
+		interval := p.UsageInterval
+		if interval <= 0 {
+			interval = 5 * time.Second
+		}
+		checkpointStop = make(chan struct{})
+		checkpointDone = make(chan struct{})
+		go func() {
+			defer close(checkpointDone)
+			ticker := time.NewTicker(interval)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-checkpointStop:
+					return
+				case <-ticker.C:
+					usageGate.Lock()
+					err := reporter.flush(time.Now().UTC())
+					if err != nil {
+						usageBlocked.Store(true)
+					}
+					usageGate.Unlock()
+					if err != nil {
+						// Fail closed: never forward indefinitely when metering fails.
+						_ = raw.Close()
+						_ = upstream.Close()
+						return
+					}
+				}
+			}
+		}()
+	}
 	defer func() {
-		if p.OnUsage != nil {
+		if reporter != nil {
+			close(checkpointStop)
+			<-checkpointDone
+			usageGate.Lock()
+			err := reporter.close(time.Now().UTC())
+			usageGate.Unlock()
+			if err != nil {
+				// A failed final checkpoint remains unacknowledged. The
+				// durable outbox cannot recover bytes only held in memory.
+				log.Printf("CRITICAL: final SNI usage checkpoint failed: %v", err)
+			}
+		} else if p.OnUsage != nil {
 			measurement := meter.snapshot(host)
 			measurement.StartedAt = startedAt
 			measurement.EndedAt = time.Now().UTC()
 			p.OnUsage(measurement)
 		}
 	}()
+	// Use the same gated, fail-closed writer for the initial ClientHello
+	// and subsequent streaming traffic. This also counts partial writes.
+	helloWriter := meteredWriter{destination: upstream, record: meter.addUpload, gate: &usageGate, blocked: &usageBlocked}
 	for len(hello) > 0 {
-		n, err := upstream.Write(hello)
+		n, err := helloWriter.Write(hello)
 		if err != nil || n == 0 {
 			return
 		}
-		meter.addUpload(uint64(n))
 		hello = hello[n:]
 	}
 	// Recheck authorization during an established session so expiry and
@@ -278,16 +339,15 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 			}
 		}
 	}()
-	done := make(chan uint64, 1)
+	done := make(chan struct{}, 1)
 	go func() {
-		n, _ := io.Copy(upstream, raw)
+		_, _ = io.Copy(meteredWriter{destination: upstream, record: meter.addUpload, gate: &usageGate, blocked: &usageBlocked}, raw)
 		_ = upstream.Close()
-		done <- uint64(n)
+		done <- struct{}{}
 	}()
-	received, _ := io.Copy(raw, upstream)
-	meter.addDownload(uint64(received))
+	_, _ = io.Copy(meteredWriter{destination: raw, record: meter.addDownload, gate: &usageGate}, upstream)
 	_ = raw.Close()
-	meter.addUpload(<-done)
+	<-done
 }
 
 // clientHelloName parses SNI using Go's TLS ClientHello parser without
