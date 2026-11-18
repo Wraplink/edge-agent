@@ -161,6 +161,35 @@ func main() {
 				Token:      token,
 				Terminator: proxy,
 			}
+			// Presence is reported from the proxy's active-session snapshot.
+			// Never block the connection lifecycle on backend HTTP latency.
+			go func() {
+				ticker := time.NewTicker(10 * time.Second)
+				defer ticker.Stop()
+				for {
+					active := proxy.ActiveSessions()
+					for start := 0; start < len(active); start += 100 {
+						end := start + 100
+						if end > len(active) { end = len(active) }
+						now := time.Now().UTC()
+						batch := make([]sessioncontrol.SessionReport, 0, end-start)
+						for _, session := range active[start:end] {
+							batch = append(batch, sessioncontrol.SessionReport{
+								SessionID: session.ID, ClientIP: session.ClientIP,
+								Mode: "sni", Protocol: "tcp",
+								ConnectedAt: session.ConnectedAt, LastActivityAt: now,
+							})
+						}
+						if err := controller.ReportSessions(ctx, batch); err != nil && ctx.Err() == nil {
+							log.Printf("SNI session report failed: %v", err)
+						}
+					}
+					select {
+					case <-ctx.Done(): return
+					case <-ticker.C:
+					}
+				}
+			}()
 			go func() {
 				ticker := time.NewTicker(10 * time.Second)
 				defer ticker.Stop()
