@@ -52,6 +52,17 @@ type Proxy struct {
 	sessions           map[string]map[net.Conn]struct{}
 	active             map[net.Conn]struct{}
  sessionIDs         map[string]net.Conn
+ sessionDetails     map[string]ActiveSession
+}
+
+// ActiveSessions returns a consistent snapshot of established SNI streams.
+// Session identity is agent-local; no user attribution is implied.
+func (p *Proxy) ActiveSessions() []ActiveSession {
+ p.mu.RLock()
+ defer p.mu.RUnlock()
+ result:=make([]ActiveSession,0,len(p.sessionDetails))
+ for _,session:=range p.sessionDetails {result=append(result,session)}
+ return result
 }
 
 // DisconnectSession closes only the TCP connection associated with an opaque
@@ -275,18 +286,22 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
  sessionID:=hex.EncodeToString(randomID[:])
  p.mu.Lock()
  if p.sessionIDs==nil {p.sessionIDs=make(map[string]net.Conn)}
- p.sessionIDs[sessionID]=raw
- p.mu.Unlock()
  startedAt:=time.Now().UTC()
+ session:=ActiveSession{ID:sessionID,ClientIP:host,Domain:serverName,ConnectedAt:startedAt}
+ if p.sessionDetails==nil {p.sessionDetails=make(map[string]ActiveSession)}
+ p.sessionIDs[sessionID]=raw
+ p.sessionDetails[sessionID]=session
+ p.mu.Unlock()
  defer func(){
   p.mu.Lock()
   delete(p.sessionIDs,sessionID)
+  delete(p.sessionDetails,sessionID)
   p.mu.Unlock()
   if p.OnSessionEnd!=nil {p.OnSessionEnd(sessionID)}
  }()
  _ = raw.SetReadDeadline(time.Time{})
  if p.OnSessionStart!=nil {
-  p.OnSessionStart(ActiveSession{ID:sessionID,ClientIP:host,Domain:serverName,ConnectedAt:startedAt})
+  p.OnSessionStart(session)
  }
 	meter := &sessionMeter{}
 	defer func() {
