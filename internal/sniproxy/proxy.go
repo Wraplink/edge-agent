@@ -43,22 +43,22 @@ type UsageObserver func(SessionUsage)
 // Proxy forwards TLS streams based on the client's SNI without decrypting TLS.
 // Only explicitly registered destinations are routable.
 type Proxy struct {
-	OnUsage             UsageObserver
-	OnSessionStart      SessionStartObserver
-	OnSessionEnd        SessionEndObserver
-	PersistUsage        func(SessionUsage) error
-	UsageInterval       time.Duration
-	Access              *Authorizer
-	DialTimeout         time.Duration
-	MaxConnections      int
-	ClientHelloTimeout  time.Duration
-	mu                  sync.RWMutex
-	targets             map[string]string
-	sessions            map[string]map[net.Conn]struct{}
-	active              map[net.Conn]struct{}
-	sessionIDs          map[string]net.Conn
-	sessionUpstreams    map[string]net.Conn
-	sessionDetails      map[string]ActiveSession
+	OnUsage            UsageObserver
+	OnSessionStart     SessionStartObserver
+	OnSessionEnd       SessionEndObserver
+	PersistUsage       func(SessionUsage) error
+	UsageInterval      time.Duration
+	Access             *Authorizer
+	DialTimeout        time.Duration
+	MaxConnections     int
+	ClientHelloTimeout time.Duration
+	mu                 sync.RWMutex
+	targets            map[string]string
+	sessions           map[string]map[net.Conn]struct{}
+	active             map[net.Conn]struct{}
+	sessionIDs         map[string]net.Conn
+	sessionUpstreams   map[string]net.Conn
+	sessionDetails     map[string]ActiveSession
 }
 
 // ActiveSessions returns a consistent snapshot of established SNI streams.
