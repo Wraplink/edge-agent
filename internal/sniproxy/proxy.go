@@ -23,6 +23,16 @@ type SessionUsage struct {
 	DownloadedBytes uint64
 }
 
+// ActiveSession describes an established, individually terminable SNI stream.
+// It does not claim a user or subscription identity.
+type ActiveSession struct {
+ ID string
+ ClientIP string
+ Domain string
+ ConnectedAt time.Time
+}
+type SessionStartObserver func(ActiveSession)
+
 // UsageObserver receives completed session measurements. Callbacks must not block.
 type UsageObserver func(SessionUsage)
 
@@ -30,6 +40,7 @@ type UsageObserver func(SessionUsage)
 // Only explicitly registered destinations are routable.
 type Proxy struct {
 	OnUsage            UsageObserver
+ OnSessionStart     SessionStartObserver
 	Access             *Authorizer
 	DialTimeout        time.Duration
 	MaxConnections     int
@@ -264,13 +275,16 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
  if p.sessionIDs==nil {p.sessionIDs=make(map[string]net.Conn)}
  p.sessionIDs[sessionID]=raw
  p.mu.Unlock()
+ startedAt:=time.Now().UTC()
  defer func(){
   p.mu.Lock()
   delete(p.sessionIDs,sessionID)
   p.mu.Unlock()
  }()
  _ = raw.SetReadDeadline(time.Time{})
-	startedAt := time.Now().UTC()
+ if p.OnSessionStart!=nil {
+  p.OnSessionStart(ActiveSession{ID:sessionID,ClientIP:host,Domain:serverName,ConnectedAt:startedAt})
+ }
 	meter := &sessionMeter{}
 	defer func() {
 		if p.OnUsage != nil {
