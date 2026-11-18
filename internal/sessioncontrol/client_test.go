@@ -145,3 +145,44 @@ func TestPollOnceDoesNotFollowCredentialRedirect(t *testing.T) {
 		t.Fatalf("redirect followed or disconnect executed: redirects=%d disconnects=%v", redirected, term.seen)
 	}
 }
+
+
+func TestPollOnceRejectsBackendErrorsWithoutDisconnecting(t *testing.T) {
+	for _, status := range []int{http.StatusUnauthorized, http.StatusForbidden, http.StatusInternalServerError} {
+		t.Run(http.StatusText(status), func(t *testing.T) {
+			term := &fakeTerminator{found: true}
+			server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.WriteHeader(status)
+				_, _ = w.Write([]byte(`{"commands":[{"commandId":"11111111-1111-4111-8111-111111111111","agentSessionId":"first"}]}`))
+			}))
+			defer server.Close()
+			client := &Client{BaseURL: server.URL, AgentID: "agent-01", Token: "secret", HTTP: server.Client(), Terminator: term}
+			if err := client.PollOnce(context.Background()); err == nil {
+				t.Fatal("expected backend error")
+			}
+			if len(term.seen) != 0 {
+				t.Fatalf("backend error triggered disconnect: %v", term.seen)
+			}
+		})
+	}
+}
+
+func TestPollOnceRejectsOversizedCommandBatch(t *testing.T) {
+	term := &fakeTerminator{found: true}
+	server := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		commands := make([]Command, 101)
+		for i := range commands {
+			commands[i] = Command{CommandID: "11111111-1111-4111-8111-111111111111", AgentSessionID: "first"}
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(commandResponse{Commands: commands})
+	}))
+	defer server.Close()
+	client := &Client{BaseURL: server.URL, AgentID: "agent-01", Token: "secret", HTTP: server.Client(), Terminator: term}
+	if err := client.PollOnce(context.Background()); err == nil {
+		t.Fatal("expected oversized batch rejection")
+	}
+	if len(term.seen) != 0 {
+		t.Fatalf("oversized batch triggered disconnect: %v", term.seen)
+	}
+}
