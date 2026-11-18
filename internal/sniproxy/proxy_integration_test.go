@@ -40,7 +40,11 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 	}}); err != nil {
 		t.Fatal(err)
 	}
+	started := make(chan ActiveSession, 1)
+ ended := make(chan string, 1)
 	proxy := &Proxy{
+        OnSessionStart: func(s ActiveSession) { started <- s },
+        OnSessionEnd: func(id string) { ended <- id },
 		Access:  auth,
 		targets: map[string]string{"game.example": upstream.Addr().String()},
 	}
@@ -72,6 +76,24 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 	case <-time.After(4 * time.Second):
 		t.Fatal("upstream did not receive TLS ClientHello")
 	}
+ var session ActiveSession
+ select {
+ case session=<-started:
+  if session.ID=="" || session.ClientIP!="127.0.0.1" || session.Domain!="game.example" {
+   t.Fatalf("unexpected active session: %+v",session)
+  }
+ case <-time.After(2*time.Second):
+  t.Fatal("session start callback not invoked")
+ }
+ if len(proxy.ActiveSessions())!=1 {t.Fatal("expected one active SNI session")}
+ if !proxy.DisconnectSession(session.ID) {t.Fatal("targeted disconnect failed")}
+ select {
+ case id:=<-ended:
+  if id!=session.ID {t.Fatalf("ended wrong session: %s",id)}
+ case <-time.After(2*time.Second):
+  t.Fatal("session end callback not invoked")
+ }
+ if len(proxy.ActiveSessions())!=0 {t.Fatal("closed session remained active")}
 	cancel()
 	select {
 	case err := <-done:
