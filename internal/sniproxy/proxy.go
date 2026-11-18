@@ -18,20 +18,20 @@ import (
 // SessionUsage records forwarded application bytes, excluding TCP/IP framing.
 // Upload is client-to-upstream; download is upstream-to-client.
 type SessionUsage struct {
-	StartedAt       time.Time
-	EndedAt         time.Time
-	ClientIP        string
-	UploadedBytes   uint64
-	DownloadedBytes uint64
+	StartedAt	time.Time
+	EndedAt	time.Time
+	ClientIP	string
+	UploadedBytes	uint64
+	DownloadedBytes	uint64
 }
 
 // ActiveSession describes an established, individually terminable SNI stream.
 // It does not claim a user or subscription identity.
 type ActiveSession struct {
-	ID          string
-	ClientIP    string
-	Domain      string
-	ConnectedAt time.Time
+	ID	string
+	ClientIP	string
+	Domain	string
+	ConnectedAt	time.Time
 }
 
 type SessionStartObserver func(ActiveSession)
@@ -43,34 +43,34 @@ type UsageObserver func(SessionUsage)
 // Proxy forwards TLS streams based on the client's SNI without decrypting TLS.
 // Only explicitly registered destinations are routable.
 type Proxy struct {
-	OnUsage            UsageObserver
-	OnSessionStart     SessionStartObserver
-	OnSessionEnd       SessionEndObserver
-	PersistUsage       func(SessionUsage) error
-	UsageInterval      time.Duration
-	Access             *Authorizer
-	DialTimeout        time.Duration
-	MaxConnections     int
-	ClientHelloTimeout time.Duration
-	mu                 sync.RWMutex
-	targets            map[string]string
-	sessions           map[string]map[net.Conn]struct{}
-	active             map[net.Conn]struct{}
-	sessionIDs         map[string]net.Conn
-	sessionUpstreams   map[string]net.Conn
-	sessionDetails     map[string]ActiveSession
+	OnUsage	UsageObserver
+	OnSessionStart	SessionStartObserver
+	OnSessionEnd	SessionEndObserver
+	PersistUsage	func(SessionUsage) error
+	UsageInterval	time.Duration
+	Access	*Authorizer
+	DialTimeout	time.Duration
+	MaxConnections	int
+	ClientHelloTimeout	time.Duration
+	mu	sync.RWMutex
+	targets	map[string]string
+	sessions	map[string]map[net.Conn]struct{}
+	active	map[net.Conn]struct{}
+	sessionIDs	map[string]net.Conn
+	sessionUpstreams	map[string]net.Conn
+	sessionDetails	map[string]ActiveSession
 }
 
 // ActiveSessions returns a consistent snapshot of established SNI streams.
 // Session identity is agent-local; no user attribution is implied.
 func (p *Proxy) ActiveSessions() []ActiveSession {
 	p.mu.RLock()
-	defer p.mu.RUnlock()
-	result := make([]ActiveSession, 0, len(p.sessionDetails))
-	for _, session := range p.sessionDetails {
+	defer	p.mu.RUnlock()
+	result	:= make([]ActiveSession, 0, len(p.sessionDetails))
+	for	_, session := range p.sessionDetails {
 		result = append(result, session)
 	}
-	return result
+	return	result
 }
 
 // DisconnectSession closes only the TCP connection associated with an opaque
@@ -78,83 +78,83 @@ func (p *Proxy) ActiveSessions() []ActiveSession {
 func (p *Proxy) DisconnectSession(sessionID string) bool {
 	p.mu.RLock()
 	conn, ok := p.sessionIDs[sessionID]
-	upstream := p.sessionUpstreams[sessionID]
+	upstream	:= p.sessionUpstreams[sessionID]
 	p.mu.RUnlock()
-	if !ok {
+	if	!ok {
 		return false
 	}
-	_ = conn.Close()
-	if upstream != nil {
+	_	= conn.Close()
+	if	upstream != nil {
 		_ = upstream.Close()
 	}
-	return true
+	return	true
 }
 
 // ActiveSessionIDs returns a snapshot of individually terminable SNI sessions.
 func (p *Proxy) ActiveSessionIDs() []string {
 	p.mu.RLock()
-	defer p.mu.RUnlock()
-	ids := make([]string, 0, len(p.sessionIDs))
-	for id := range p.sessionIDs {
+	defer	p.mu.RUnlock()
+	ids	:= make([]string, 0, len(p.sessionIDs))
+	for	id := range p.sessionIDs {
 		ids = append(ids, id)
 	}
-	return ids
+	return	ids
 }
 
 func (p *Proxy) Register(domain, destination string) error {
-	domain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
-	if domain == "" || destination == "" {
+	domain	= strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
+	if	domain == "" || destination == "" {
 		return fmt.Errorf("SNI domain and destination are required")
 	}
 	host, port, err := net.SplitHostPort(destination)
-	if err != nil {
+	if	err != nil {
 		return fmt.Errorf("invalid SNI destination: %w", err)
 	}
-	parsedIP := net.ParseIP(host)
-	if parsedIP == nil {
+	parsedIP	:= net.ParseIP(host)
+	if	parsedIP == nil {
 		return fmt.Errorf("SNI destination must be an IP literal")
 	}
-	if parsedIP.IsUnspecified() || parsedIP.IsMulticast() || parsedIP.IsLoopback() || parsedIP.IsLinkLocalUnicast() || parsedIP.IsLinkLocalMulticast() {
+	if	parsedIP.IsUnspecified() || parsedIP.IsMulticast() || parsedIP.IsLoopback() || parsedIP.IsLinkLocalUnicast() || parsedIP.IsLinkLocalMulticast() {
 		return fmt.Errorf("SNI destination cannot be a loopback, link-local, multicast or unspecified IP")
 	}
-	if port != "443" {
+	if	port != "443" {
 		return fmt.Errorf("SNI destination must use TLS port 443")
 	}
 	p.mu.Lock()
-	defer p.mu.Unlock()
-	if p.targets == nil {
+	defer	p.mu.Unlock()
+	if	p.targets == nil {
 		p.targets = make(map[string]string)
 	}
-	previous := p.targets[domain]
+	previous	:= p.targets[domain]
 	p.targets[domain] = destination
-	if previous != "" && previous != destination {
+	if	previous != "" && previous != destination {
 		for conn := range p.sessions[domain] {
 			_ = conn.Close()
 		}
 	}
-	return nil
+	return	nil
 }
 
 func (p *Proxy) Remove(domain string) {
-	domain = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
+	domain	= strings.ToLower(strings.TrimSuffix(strings.TrimSpace(domain), "."))
 	p.mu.Lock()
-	defer p.mu.Unlock()
+	defer	p.mu.Unlock()
 	delete(p.targets, domain)
-	for conn := range p.sessions[domain] {
+	for	conn := range p.sessions[domain] {
 		_ = conn.Close()
 	}
 }
 
 func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
-	if err := ctx.Err(); err != nil {
+	if	err := ctx.Err(); err != nil {
 		_ = listener.Close()
 		return nil
 	}
-	if p.Access == nil {
+	if	p.Access == nil {
 		return fmt.Errorf("SNI authorization is required")
 	}
-	var handlers sync.WaitGroup
-	defer func() {
+	var	handlers sync.WaitGroup
+	defer	func() {
 		_ = listener.Close()
 		p.mu.Lock()
 		connections := make([]net.Conn, 0, len(p.active))
@@ -167,21 +167,21 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 		}
 		handlers.Wait()
 	}()
-	stopListener := make(chan struct{})
-	defer close(stopListener)
-	go func() {
+	stopListener	:= make(chan struct{})
+	defer	close(stopListener)
+	go	func() {
 		select {
 		case <-ctx.Done():
 			_ = listener.Close()
 		case <-stopListener:
 		}
 	}()
-	limit := p.MaxConnections
-	if limit <= 0 {
+	limit	:= p.MaxConnections
+	if	limit <= 0 {
 		limit = 1024
 	}
-	slots := make(chan struct{}, limit)
-	for {
+	slots	:= make(chan struct{}, limit)
+	for	{
 		conn, err := listener.Accept()
 		if err == nil && ctx.Err() != nil {
 			_ = conn.Close()
@@ -230,20 +230,20 @@ func (p *Proxy) Serve(ctx context.Context, listener net.Listener) error {
 }
 
 func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
-	defer raw.Close()
+	defer	raw.Close()
 	host, _, err := net.SplitHostPort(raw.RemoteAddr().String())
-	if err != nil || !p.Access.Allowed(host) {
+	if	err != nil || !p.Access.Allowed(host) {
 		return
 	}
-	helloTimeout := p.ClientHelloTimeout
-	if helloTimeout <= 0 {
+	helloTimeout	:= p.ClientHelloTimeout
+	if	helloTimeout <= 0 {
 		helloTimeout = 5 * time.Second
 	}
-	_ = raw.SetReadDeadline(time.Now().Add(helloTimeout))
-	var hello []byte
-	const maxHello = 65536
-	var serverName string
-	for len(hello) < maxHello {
+	_	= raw.SetReadDeadline(time.Now().Add(helloTimeout))
+	var	hello []byte
+	const	maxHello = 65536
+	var	serverName string
+	for	len(hello) < maxHello {
 		chunk := make([]byte, 4096)
 		n, err := raw.Read(chunk)
 		if err != nil {
@@ -256,29 +256,29 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 			break
 		}
 	}
-	if serverName == "" {
+	if	serverName == "" {
 		return
 	}
 	p.mu.RLock()
-	target := p.targets[serverName]
+	target	:= p.targets[serverName]
 	p.mu.RUnlock()
-	if target == "" || !p.Access.Allowed(host) {
+	if	target == "" || !p.Access.Allowed(host) {
 		return
 	}
 	p.mu.Lock()
-	if p.targets[serverName] != target || !p.Access.Allowed(host) {
+	if	p.targets[serverName] != target || !p.Access.Allowed(host) {
 		p.mu.Unlock()
 		return
 	}
-	if p.sessions == nil {
+	if	p.sessions == nil {
 		p.sessions = make(map[string]map[net.Conn]struct{})
 	}
-	if p.sessions[serverName] == nil {
+	if	p.sessions[serverName] == nil {
 		p.sessions[serverName] = make(map[net.Conn]struct{})
 	}
 	p.sessions[serverName][raw] = struct{}{}
 	p.mu.Unlock()
-	defer func() {
+	defer	func() {
 		p.mu.Lock()
 		delete(p.sessions[serverName], raw)
 		if len(p.sessions[serverName]) == 0 {
@@ -286,39 +286,39 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 		}
 		p.mu.Unlock()
 	}()
-	timeout := p.DialTimeout
-	if timeout <= 0 {
+	timeout	:= p.DialTimeout
+	if	timeout <= 0 {
 		timeout = 5 * time.Second
 	}
 	upstream, err := (&net.Dialer{Timeout: timeout}).DialContext(ctx, "tcp", target)
-	if err != nil {
+	if	err != nil {
 		return
 	}
-	defer upstream.Close()
+	defer	upstream.Close()
 	// Register only after the upstream connection succeeds. Random identifiers
 	// are scoped to this process and cannot be selected by a remote client.
-	var randomID [16]byte
-	if _, err := rand.Read(randomID[:]); err != nil {
+	var	randomID [16]byte
+	if	_, err := rand.Read(randomID[:]); err != nil {
 		return
 	}
-	sessionID := hex.EncodeToString(randomID[:])
+	sessionID	:= hex.EncodeToString(randomID[:])
 	p.mu.Lock()
-	if p.sessionIDs == nil {
+	if	p.sessionIDs == nil {
 		p.sessionIDs = make(map[string]net.Conn)
 	}
-	startedAt := time.Now().UTC()
-	session := ActiveSession{ID: sessionID, ClientIP: host, Domain: serverName, ConnectedAt: startedAt}
-	if p.sessionDetails == nil {
+	startedAt	:= time.Now().UTC()
+	session	:= ActiveSession{ID: sessionID, ClientIP: host, Domain: serverName, ConnectedAt: startedAt}
+	if	p.sessionDetails == nil {
 		p.sessionDetails = make(map[string]ActiveSession)
 	}
 	p.sessionIDs[sessionID] = raw
-	if p.sessionUpstreams == nil {
+	if	p.sessionUpstreams == nil {
 		p.sessionUpstreams = make(map[string]net.Conn)
 	}
 	p.sessionUpstreams[sessionID] = upstream
 	p.sessionDetails[sessionID] = session
 	p.mu.Unlock()
-	defer func() {
+	defer	func() {
 		p.mu.Lock()
 		delete(p.sessionIDs, sessionID)
 		delete(p.sessionUpstreams, sessionID)
@@ -328,20 +328,20 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 			p.OnSessionEnd(sessionID)
 		}
 	}()
-	_ = raw.SetReadDeadline(time.Time{})
-	if p.OnSessionStart != nil {
+	_	= raw.SetReadDeadline(time.Time{})
+	if	p.OnSessionStart != nil {
 		p.OnSessionStart(session)
 	}
-	meter := &sessionMeter{}
+	meter	:= &sessionMeter{}
 	// Serializes forwarding writes with periodic checkpoints. Both directions
 	// share this gate so each checkpoint has a precise byte boundary.
-	var usageGate sync.RWMutex
+	var	usageGate sync.RWMutex
 	// Once persistence fails, no forwarding write may proceed.
-	var usageBlocked atomic.Bool
-	var reporter *intervalReporter
-	var checkpointStop chan struct{}
-	var checkpointDone chan struct{}
-	if p.PersistUsage != nil {
+	var	usageBlocked atomic.Bool
+	var	reporter *intervalReporter
+	var	checkpointStop chan struct{}
+	var	checkpointDone chan struct{}
+	if	p.PersistUsage != nil {
 		reporter, err = newIntervalReporter(meter, host, startedAt, p.PersistUsage)
 		if err != nil {
 			return
@@ -377,7 +377,7 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 			}
 		}()
 	}
-	defer func() {
+	defer	func() {
 		if reporter != nil {
 			close(checkpointStop)
 			<-checkpointDone
@@ -398,8 +398,8 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	}()
 	// Use the same gated, fail-closed writer for the initial ClientHello
 	// and subsequent streaming traffic. This also counts partial writes.
-	helloWriter := meteredWriter{destination: upstream, record: meter.addUpload, gate: &usageGate, blocked: &usageBlocked}
-	for len(hello) > 0 {
+	helloWriter	:= meteredWriter{destination: upstream, record: meter.addUpload, gate: &usageGate, blocked: &usageBlocked}
+	for	len(hello) > 0 {
 		n, err := helloWriter.Write(hello)
 		if err != nil || n == 0 {
 			return
@@ -408,9 +408,9 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 	}
 	// Recheck authorization during an established session so expiry and
 	// disconnect snapshots terminate traffic without waiting for TCP close.
-	stop := make(chan struct{})
-	defer close(stop)
-	go func() {
+	stop	:= make(chan struct{})
+	defer	close(stop)
+	go	func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 		for {
@@ -433,69 +433,69 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 			}
 		}
 	}()
-	done := make(chan struct{}, 1)
-	go func() {
+	done	:= make(chan struct{}, 1)
+	go	func() {
 		_, _ = io.Copy(meteredWriter{destination: upstream, record: meter.addUpload, gate: &usageGate, blocked: &usageBlocked}, raw)
 		_ = upstream.Close()
 		done <- struct{}{}
 	}()
 	_, _ = io.Copy(meteredWriter{destination: raw, record: meter.addDownload, gate: &usageGate}, upstream)
-	_ = raw.Close()
+	_	= raw.Close()
 	<-done
 }
 
 // clientHelloName parses SNI using Go's TLS ClientHello parser without
 // performing a TLS handshake or terminating the encrypted connection.
 func clientHelloName(data []byte) (string, bool) {
-	var name string
-	conn := &helloReader{data: data}
-	server := tls.Server(conn, &tls.Config{
+	var	name string
+	conn	:= &helloReader{data: data}
+	server	:= tls.Server(conn, &tls.Config{
 		GetConfigForClient: func(info *tls.ClientHelloInfo) (*tls.Config, error) {
 			name = strings.ToLower(strings.TrimSuffix(info.ServerName, "."))
 			return nil, fmt.Errorf("SNI inspection complete")
 		},
 	})
-	_ = server.Handshake()
-	return name, name != ""
+	_	= server.Handshake()
+	return	name, name != ""
 }
 
 type helloReader struct {
-	data []byte
+	data	[]byte
 }
 
 func (r *helloReader) Read(p []byte) (int, error) {
-	if len(r.data) == 0 {
+	if	len(r.data) == 0 {
 		return 0, io.EOF
 	}
-	n := copy(p, r.data)
+	n	:= copy(p, r.data)
 	r.data = r.data[n:]
-	return n, nil
+	return	n, nil
 }
 
 func (r *helloReader) Write(p []byte) (int, error) {
-	return len(p), nil
+	return	len(p), nil
 }
 
 func (r *helloReader) Close() error {
-	return nil
+	return	nil
 }
 
 func (r *helloReader) LocalAddr() net.Addr {
-	return &net.TCPAddr{}
+	return	&net.TCPAddr{}
 }
 
 func (r *helloReader) RemoteAddr() net.Addr {
-	return &net.TCPAddr{}
+	return	&net.TCPAddr{}
 }
 
 func (r *helloReader) SetDeadline(time.Time) error {
-	return nil
+	return	nil
 }
 
 func (r *helloReader) SetReadDeadline(time.Time) error {
-	return nil
+	return	nil
 }
 
 func (r *helloReader) SetWriteDeadline(time.Time) error {
-	return nil
+	return	nil
 }
