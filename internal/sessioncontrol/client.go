@@ -2,6 +2,7 @@ package sessioncontrol
 
 import (
 	"context"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -11,7 +12,7 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
+	"encoding/hex"
 )
 
 // Terminator closes one agent-local connection; it must not revoke other sessions.
@@ -29,8 +30,32 @@ type commandResponse struct {
 }
 
 func validCommandID(value string) bool {
-	id, err := uuid.Parse(value)
-	return err == nil && id != uuid.Nil
+	if len(value) != 36 {
+		return false
+	}
+	var digits [32]byte
+	offset := 0
+	for i := 0; i < len(value); i++ {
+		switch i {
+		case 8, 13, 18, 23:
+			if value[i] != '-' {
+				return false
+			}
+		default:
+			digits[offset] = value[i]
+			offset++
+		}
+	}
+	var decoded [16]byte
+	if _, err := hex.Decode(decoded[:], digits[:]); err != nil {
+		return false
+	}
+	for _, b := range decoded {
+		if b != 0 {
+			return true
+		}
+	}
+	return false
 }
 
 // Client polls a trusted backend endpoint using a separately provisioned token.
