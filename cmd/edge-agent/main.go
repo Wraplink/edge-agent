@@ -156,9 +156,9 @@ func main() {
 				log.Fatal("session control requires agent ID")
 			}
 			controller := &sessioncontrol.Client{
-				BaseURL: cfg.Backend.URL,
-				AgentID: cfg.Agent.ID,
-				Token: token,
+				BaseURL:    cfg.Backend.URL,
+				AgentID:    cfg.Agent.ID,
+				Token:      token,
 				Terminator: proxy,
 			}
 			go func() {
