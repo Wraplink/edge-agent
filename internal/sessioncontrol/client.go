@@ -101,36 +101,52 @@ func (c *Client) request(ctx context.Context, method, path, body string) (*http.
 // ownership are intentionally omitted: the backend resolves them from active
 // entitlements and rejects ambiguous client IP attribution.
 type SessionReport struct {
- SessionID string `json:"sessionId"`
- ClientIP string `json:"clientIp"`
- Mode string `json:"mode"`
- Protocol string `json:"protocol"`
- ConnectedAt time.Time `json:"connectedAt"`
- LastActivityAt time.Time `json:"lastActivityAt"`
- UploadBytes int64 `json:"uploadBytes"`
- DownloadBytes int64 `json:"downloadBytes"`
+	SessionID      string    `json:"sessionId"`
+	ClientIP       string    `json:"clientIp"`
+	Mode           string    `json:"mode"`
+	Protocol       string    `json:"protocol"`
+	ConnectedAt    time.Time `json:"connectedAt"`
+	LastActivityAt time.Time `json:"lastActivityAt"`
+	UploadBytes    int64     `json:"uploadBytes"`
+	DownloadBytes  int64     `json:"downloadBytes"`
 }
 
 // ReportSessions sends bounded snapshots over the same authenticated HTTPS
 // transport as disconnect polling. The caller retries future snapshots.
 func (c *Client) ReportSessions(ctx context.Context, sessions []SessionReport) error {
- if len(sessions)==0 {return nil}
- if len(sessions)>100 {return errors.New("too many sessions in report")}
- seen:=make(map[string]struct{},len(sessions))
- for _,session:=range sessions {
-  if session.SessionID=="" || session.ClientIP=="" || session.Mode!="sni" || session.Protocol!="tcp" || session.ConnectedAt.IsZero() || session.LastActivityAt.Before(session.ConnectedAt) || session.UploadBytes<0 || session.DownloadBytes<0 {
-   return errors.New("invalid SNI session report")
-  }
-  if _,exists:=seen[session.SessionID];exists {return errors.New("duplicate session report")}
-  seen[session.SessionID]=struct{}{}
- }
- body,err:=json.Marshal(struct{Sessions []SessionReport `json:"sessions"`}{Sessions:sessions})
- if err!=nil{return err}
- resp,err:=c.request(ctx,http.MethodPost,"/api/v1/internal/network/sessions/report",string(body))
- if err!=nil{return err}
- defer resp.Body.Close()
- if resp.StatusCode!=http.StatusOK {return fmt.Errorf("report sessions: HTTP %d",resp.StatusCode)}
- return nil
+	if len(sessions) == 0 {
+		return nil
+	}
+	if len(sessions) > 100 {
+		return errors.New("too many sessions in report")
+	}
+	seen := make(map[string]struct{}, len(sessions))
+	for _, session := range sessions {
+		if session.SessionID == "" || session.ClientIP == "" || session.Mode != "sni" || session.Protocol != "tcp" ||
+			session.ConnectedAt.IsZero() || session.LastActivityAt.Before(session.ConnectedAt) ||
+			session.UploadBytes < 0 || session.DownloadBytes < 0 {
+			return errors.New("invalid SNI session report")
+		}
+		if _, exists := seen[session.SessionID]; exists {
+			return errors.New("duplicate session report")
+		}
+		seen[session.SessionID] = struct{}{}
+	}
+	body, err := json.Marshal(struct {
+		Sessions []SessionReport `json:"sessions"`
+	}{Sessions: sessions})
+	if err != nil {
+		return err
+	}
+	resp, err := c.request(ctx, http.MethodPost, "/api/v1/internal/network/sessions/report", string(body))
+	if err != nil {
+		return err
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode != http.StatusOK {
+		return fmt.Errorf("report sessions: HTTP %d", resp.StatusCode)
+	}
+	return nil
 }
 
 // PollOnce processes only instructions returned by the authenticated backend.
