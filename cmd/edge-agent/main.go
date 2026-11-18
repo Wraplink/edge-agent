@@ -20,6 +20,7 @@ import (
 	"github.com/wraplink/edge-agent/internal/config"
 	"github.com/wraplink/edge-agent/internal/dataplane"
 	"github.com/wraplink/edge-agent/internal/inventory"
+	"github.com/wraplink/edge-agent/internal/sessioncontrol"
 	"github.com/wraplink/edge-agent/internal/sniproxy"
 	"github.com/wraplink/edge-agent/internal/usage"
 )
@@ -159,6 +160,71 @@ func main() {
 				}
 			}
 		}
+		// Session disconnect is opt-in until backend agent identity and
+		// credential provisioning are enabled. Never reuse the shared control key.
+		if token := os.Getenv("WRAPLINK_SESSION_AGENT_TOKEN"); token != "" {
+			if cfg.Backend.URL == "" {
+				log.Fatal("WRAPLINK_SESSION_AGENT_TOKEN requires backend URL")
+			}
+			if cfg.Agent.ID == "" {
+				log.Fatal("session control requires agent ID")
+			}
+			controller := &sessioncontrol.Client{
+				BaseURL:    cfg.Backend.URL,
+				AgentID:    cfg.Agent.ID,
+				Token:      token,
+				Terminator: proxy,
+			}
+			// Presence is reported from the proxy's active-session snapshot.
+			// Never block the connection lifecycle on backend HTTP latency.
+			go func() {
+				ticker := time.NewTicker(10 * time.Second)
+				defer ticker.Stop()
+				for {
+					active := proxy.ActiveSessions()
+					for start := 0; start < len(active); start += 100 {
+						end := start + 100
+						if end > len(active) {
+							end = len(active)
+						}
+						now := time.Now().UTC()
+						batch := make([]sessioncontrol.SessionReport, 0, end-start)
+						for _, session := range active[start:end] {
+							batch = append(batch, sessioncontrol.SessionReport{
+								SessionID:      session.ID,
+								ClientIP:       session.ClientIP,
+								Mode:           "sni",
+								Protocol:       "tcp",
+								ConnectedAt:    session.ConnectedAt,
+								LastActivityAt: maxSessionActivity(now, session.ConnectedAt),
+							})
+						}
+						if err := controller.ReportSessions(ctx, batch); err != nil && ctx.Err() == nil {
+							log.Printf("SNI session report failed: %v", err)
+						}
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+					}
+				}
+			}()
+			go func() {
+				ticker := time.NewTicker(10 * time.Second)
+				defer ticker.Stop()
+				for {
+					if err := controller.PollOnce(ctx); err != nil && ctx.Err() == nil {
+						log.Printf("session disconnect poll failed: %v", err)
+					}
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+					}
+				}
+			}()
+		}
 		service.SetSNIForwarder(proxy)
 		go func() {
 			if err := proxy.Serve(ctx, listener); err != nil {
@@ -178,6 +244,15 @@ func main() {
 		_ = alerts.Send("agent_stopped", "critical", "Edge agent stopped unexpectedly")
 		log.Fatalf("edge-agent failed: %v", err)
 	}
+}
+
+// maxSessionActivity guards against wall-clock adjustments between session
+// creation and a periodic observation.
+func maxSessionActivity(observedAt, connectedAt time.Time) time.Time {
+	if observedAt.Before(connectedAt) {
+		return connectedAt
+	}
+	return observedAt
 }
 
 // startAccessDiagnostics exposes an explicitly configured inspection API.

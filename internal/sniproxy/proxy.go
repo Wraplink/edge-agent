@@ -2,7 +2,9 @@ package sniproxy
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/tls"
+	"encoding/hex"
 	"fmt"
 	"io"
 	"log"
@@ -23,6 +25,18 @@ type SessionUsage struct {
 	DownloadedBytes uint64
 }
 
+// ActiveSession describes an established, individually terminable SNI stream.
+// It does not claim a user or subscription identity.
+type ActiveSession struct {
+	ID          string
+	ClientIP    string
+	Domain      string
+	ConnectedAt time.Time
+}
+
+type SessionStartObserver func(ActiveSession)
+type SessionEndObserver func(string)
+
 // UsageObserver receives completed session measurements. Callbacks must not block.
 type UsageObserver func(SessionUsage)
 
@@ -30,6 +44,8 @@ type UsageObserver func(SessionUsage)
 // Only explicitly registered destinations are routable.
 type Proxy struct {
 	OnUsage            UsageObserver
+	OnSessionStart     SessionStartObserver
+	OnSessionEnd       SessionEndObserver
 	PersistUsage       func(SessionUsage) error
 	UsageInterval      time.Duration
 	Access             *Authorizer
@@ -40,6 +56,49 @@ type Proxy struct {
 	targets            map[string]string
 	sessions           map[string]map[net.Conn]struct{}
 	active             map[net.Conn]struct{}
+	sessionIDs         map[string]net.Conn
+	sessionUpstreams   map[string]net.Conn
+	sessionDetails     map[string]ActiveSession
+}
+
+// ActiveSessions returns a consistent snapshot of established SNI streams.
+// Session identity is agent-local; no user attribution is implied.
+func (p *Proxy) ActiveSessions() []ActiveSession {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	result := make([]ActiveSession, 0, len(p.sessionDetails))
+	for _, session := range p.sessionDetails {
+		result = append(result, session)
+	}
+	return result
+}
+
+// DisconnectSession closes only the TCP connection associated with an opaque
+// agent-local session ID. It does not revoke a user's broader entitlement.
+func (p *Proxy) DisconnectSession(sessionID string) bool {
+	p.mu.RLock()
+	conn, ok := p.sessionIDs[sessionID]
+	upstream := p.sessionUpstreams[sessionID]
+	p.mu.RUnlock()
+	if !ok {
+		return false
+	}
+	_ = conn.Close()
+	if upstream != nil {
+		_ = upstream.Close()
+	}
+	return true
+}
+
+// ActiveSessionIDs returns a snapshot of individually terminable SNI sessions.
+func (p *Proxy) ActiveSessionIDs() []string {
+	p.mu.RLock()
+	defer p.mu.RUnlock()
+	ids := make([]string, 0, len(p.sessionIDs))
+	for id := range p.sessionIDs {
+		ids = append(ids, id)
+	}
+	return ids
 }
 
 func (p *Proxy) Register(domain, destination string) error {
@@ -236,8 +295,43 @@ func (p *Proxy) handle(ctx context.Context, raw net.Conn) {
 		return
 	}
 	defer upstream.Close()
-	_ = raw.SetReadDeadline(time.Time{})
+	// Register only after the upstream connection succeeds. Random identifiers
+	// are scoped to this process and cannot be selected by a remote client.
+	var randomID [16]byte
+	if _, err := rand.Read(randomID[:]); err != nil {
+		return
+	}
+	sessionID := hex.EncodeToString(randomID[:])
+	p.mu.Lock()
+	if p.sessionIDs == nil {
+		p.sessionIDs = make(map[string]net.Conn)
+	}
 	startedAt := time.Now().UTC()
+	session := ActiveSession{ID: sessionID, ClientIP: host, Domain: serverName, ConnectedAt: startedAt}
+	if p.sessionDetails == nil {
+		p.sessionDetails = make(map[string]ActiveSession)
+	}
+	p.sessionIDs[sessionID] = raw
+	if p.sessionUpstreams == nil {
+		p.sessionUpstreams = make(map[string]net.Conn)
+	}
+	p.sessionUpstreams[sessionID] = upstream
+	p.sessionDetails[sessionID] = session
+	p.mu.Unlock()
+	defer func() {
+		p.mu.Lock()
+		delete(p.sessionIDs, sessionID)
+		delete(p.sessionUpstreams, sessionID)
+		delete(p.sessionDetails, sessionID)
+		p.mu.Unlock()
+		if p.OnSessionEnd != nil {
+			p.OnSessionEnd(sessionID)
+		}
+	}()
+	_ = raw.SetReadDeadline(time.Time{})
+	if p.OnSessionStart != nil {
+		p.OnSessionStart(session)
+	}
 	meter := &sessionMeter{}
 	// Serializes forwarding writes with periodic checkpoints. Both directions
 	// share this gate so each checkpoint has a precise byte boundary.
