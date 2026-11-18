@@ -11,8 +11,6 @@ import (
 	"net/url"
 	"strings"
 	"time"
-
-	"encoding/hex"
 )
 
 // Terminator closes one agent-local connection; it must not revoke other sessions.
