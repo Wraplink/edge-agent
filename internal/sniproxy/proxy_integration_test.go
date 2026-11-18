@@ -17,6 +17,8 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 	}
 	defer upstream.Close()
 	received := make(chan []byte, 1)
+ releaseUpstream := make(chan struct{})
+ defer close(releaseUpstream)
 	go func() {
 		conn, err := upstream.Accept()
 		if err != nil {
@@ -28,6 +30,7 @@ func TestProxyForwardsTLSClientHelloToUpstream(t *testing.T) {
 		n, err := conn.Read(buf[:])
 		if err == nil {
 			received <- append([]byte(nil), buf[:n]...)
+   <-releaseUpstream
 		}
 	}()
 
