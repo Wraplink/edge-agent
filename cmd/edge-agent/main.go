@@ -249,12 +249,14 @@ func main() {
 // maxSessionActivity guards against wall-clock adjustments between session
 // creation and a periodic observation.
 func maxSessionActivity(observedAt, connectedAt time.Time) time.Time {
-\tif observedAt.Before(connectedAt) {
+	if observedAt.Before(connectedAt) {
 		return connectedAt
 	}
 	return observedAt
 }
 
+// startAccessDiagnostics exposes an explicitly configured inspection API.
+// Operators must restrict network access and supply a strong token.
 func startAccessDiagnostics(ctx context.Context, authorizer *sniproxy.Authorizer, cfg config.DiagnosticsConfig) {
 	if !cfg.Enabled {
 		return
