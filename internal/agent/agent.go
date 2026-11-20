@@ -740,22 +740,22 @@ func (a *Agent) resolveSNI(ctx context.Context, domain string) ([]net.IP, error)
 // RouteReadiness describes configuration prerequisites, not dataplane reachability.
 // A healthy dataplane must be checked separately before advertising full health.
 type RouteReadiness struct {
- Enabled bool
- InventoryConfigured bool
- PublicIPCount int
- DataplaneConfigured bool
- ReadyForHealthProbe bool
+	Enabled             bool
+	InventoryConfigured bool
+	PublicIPCount       int
+	DataplaneConfigured bool
+	ReadyForHealthProbe bool
 }
 
 func (a *Agent) routeReadiness() RouteReadiness {
- r := RouteReadiness{
-  Enabled: a.routeCapacity > 0,
-  InventoryConfigured: a.routeInventory != nil,
-  PublicIPCount: len(a.routePublicIPs),
-  DataplaneConfigured: a.dataplane != nil,
- }
- r.ReadyForHealthProbe = r.Enabled && r.InventoryConfigured && r.PublicIPCount > 0 && r.DataplaneConfigured
- return r
+	r := RouteReadiness{
+		Enabled:             a.routeCapacity > 0,
+		InventoryConfigured: a.routeInventory != nil,
+		PublicIPCount:       len(a.routePublicIPs),
+		DataplaneConfigured: a.dataplane != nil,
+	}
+	r.ReadyForHealthProbe = r.Enabled && r.InventoryConfigured && r.PublicIPCount > 0 && r.DataplaneConfigured
+	return r
 }
 
 func (a *Agent) syncBackendHealth(ctx context.Context, initial bool) {
