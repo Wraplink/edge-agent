@@ -8,7 +8,10 @@ backend:
   url: ${WRAPLINK_BACKEND_URL}
   control_key: ${NETWORK_CONTROL_KEY}
   # Dedicated IPv4 addresses assigned to this host; do not advertise unrelated IPs.
-  route_public_ips: [] # Add dedicated route IPs when route capacity is enabled
+  # Example uses this host's public IPv4 for Full Route; replace with a dedicated
+  # route IPv4 if the host has separate addresses. Must be assigned to this host.
+  route_public_ips:
+    - "${EDGE_PUBLIC_IP}"
 
 agent:
   id: "${EDGE_AGENT_ID}"
