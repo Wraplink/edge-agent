@@ -130,3 +130,49 @@ On the **central platform**, `WRAPLINK_NETWORK_SESSIONS_ENABLED=false` is the de
 On each **edge host**, `WRAPLINK_SESSION_AGENT_TOKEN` is empty by default in `.env.example`. Only after provisioning a **distinct** token for that agent's Backend `network_agent_health.id` should you set it in the private `.env.local`. The Backend must store only the corresponding SHA-256 token digest in `network_session_agent_credentials`. Never copy the shared `NETWORK_CONTROL_KEY`, `NETWORK_CONTROL_SYNC_KEY`, or DNS Control registration token into this variable.
 
 When configured, the SNI agent reports active sessions and polls `https://api.wraplink.ir/api/v1/internal/network/sessions/commands` every 10 seconds and acknowledges targeted disconnects. The URL must use HTTPS and the agent ID must match the Backend registration identity. If credentials or the endpoint are unavailable, polling fails; do not enable the token until the backend is ready. **Full Route targeted termination is not implemented by this opt-in setting.** SNI session snapshots are authenticated but live end-to-end disconnect verification, lifecycle end events, durable delivery, and counter reconciliation remain outstanding.
+
+## Optional origin DNS delegation through DNS Control
+
+Default: `edge.origin_dns_mode: local` resolves SNI lease destinations
+directly using `edge.upstream_dns`. To use the central DNS Control origin
+resolver, set:
+
+```yaml
+edge:
+  origin_dns_mode: dns_control
+```
+
+This uses the existing authenticated `POST /api/v1/dns/origin-ipv4` API.
+DNS Control must run the compatible version with agent-origin delegation
+enabled, or it will resolve via its own local upstreams. Managed hijack
+policies are never applied to origin lookups.
+
+To allow DNS Control to delegate to this Edge Agent, configure the
+optional origin DNS endpoint on the agent:
+
+```yaml
+origin_dns:
+  enabled: true
+  listen_address: "127.0.0.1:9092"
+  token: "${DNS_ORIGIN_AGENT_TOKEN}"
+```
+
+The token must be at least 32 characters and must match DNS Control's
+`dns.origin_agent_token`. The agent endpoint speaks HTTP **only**;
+publish it through a TLS-terminating reverse proxy with a restrictive
+DNS Control source-IP allowlist. Do not expose port 9092 publicly.
+The proxy must preserve `Authorization` and `Content-Type`. DNS Control
+sets `dns.origin_agent_url` to the HTTPS proxy origin.
+
+Origin DNS uses independent upstream DNS servers configured in
+`edge.upstream_dns`, never the WrapLink managed DNS service. TCP/53
+outbound access is required. NXDOMAIN is returned unchanged; DNS Control
+does not substitute a hijacked address. For security, use a separate
+credential from agent registration and session control.
+
+Deploy in this order: update Edge Agent with the endpoint disabled;
+deploy DNS Control; expose and verify the authenticated HTTPS endpoint;
+enable DNS Control origin delegation; optionally switch
+`edge.origin_dns_mode` to `dns_control`. Roll back by setting
+`edge.origin_dns_mode: local` and disabling the DNS Control origin
+agent URL.
