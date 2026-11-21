@@ -41,6 +41,7 @@ type Agent struct {
 	interval time.Duration
 
 	upstreamDNS   []string
+	originDNSMode string
 	sniCapacity   int
 	routeCapacity int
 
@@ -108,6 +109,8 @@ func (a *Agent) syncRouteInventory(ctx context.Context) {
 		log.Printf("agent: backend route inventory registered agent=%s addresses=%d", a.id, len(a.routePublicIPs))
 	}
 }
+
+func (a *Agent) SetOriginDNSMode(mode string) {a.originDNSMode=mode}
 
 func (a *Agent) SetUpstreamDNS(servers []string) {
 	a.upstreamDNS = append([]string(nil), servers...)
@@ -287,7 +290,7 @@ func (a *Agent) processSNILease(ctx context.Context, lease client.Lease) error {
 	if destinationIP == nil || destinationIP.To4() == nil {
 		// Resolve through an independent upstream to avoid looping back through
 		// WrapLink DNS, which may return the edge agent's own address.
-		addresses, err := a.resolveSNI(ctx, lease.Domain)
+		addresses, err := a.resolveLeaseOrigin(ctx, lease.Domain)
 		if err != nil {
 			return fmt.Errorf("resolve SNI destination for %s: %w", lease.Domain, err)
 		}
@@ -705,6 +708,17 @@ func formatPortRange(start, end uint16) string {
 		return fmt.Sprintf("%d", start)
 	}
 	return fmt.Sprintf("%d-%d", start, end)
+}
+
+func (a *Agent) resolveLeaseOrigin(ctx context.Context, domain string) ([]net.IP,error) {
+ if a.originDNSMode=="dns_control" {
+  origin,err:=a.dnsClient.ResolveOriginIPv4(ctx,domain)
+  if err!=nil{return nil,err}
+  ip:=net.ParseIP(origin)
+  if ip==nil || ip.To4()==nil {return nil,fmt.Errorf("DNS Control returned invalid IPv4 address")}
+  return []net.IP{ip.To4()},nil
+ }
+ return a.resolveSNI(ctx,domain)
 }
 
 func (a *Agent) resolveSNI(ctx context.Context, domain string) ([]net.IP, error) {
