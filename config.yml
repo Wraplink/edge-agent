@@ -25,6 +25,8 @@ edge:
   # Enable local host Full Route forwarding (default: false).
   local_output_dnat: false
   # Independent DNS for original SNI destinations; never point to WrapLink DNS Control.
+  # local (default) or dns_control: resolve SNI origins through DNS Control API.
+  origin_dns_mode: local
   upstream_dns:
     - "1.1.1.1:53"
     - "8.8.8.8:53"
@@ -41,3 +43,10 @@ diagnostics:
   enabled: false
   listen_address: "127.0.0.1:9091"
   token: "" # Set to ${WRAPLINK_DIAGNOSTICS_TOKEN} when enabling diagnostics
+
+# Optional authenticated origin DNS service for DNS Control.
+# Expose only through a TLS-terminating, IP-restricted reverse proxy.
+origin_dns:
+  enabled: false
+  listen_address: "127.0.0.1:9092"
+  token: ""

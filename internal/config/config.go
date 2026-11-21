@@ -17,6 +17,13 @@ type Config struct {
 	Agent       AgentConfig       `yaml:"agent"`
 	Edge        EdgeConfig        `yaml:"edge"`
 	Diagnostics DiagnosticsConfig `yaml:"diagnostics"`
+	OriginDNS   OriginDNSConfig   `yaml:"origin_dns"`
+}
+
+type OriginDNSConfig struct {
+	Enabled       bool   `yaml:"enabled"`
+	ListenAddress string `yaml:"listen_address"`
+	Token         string `yaml:"token"`
 }
 
 type DiagnosticsConfig struct {
@@ -52,6 +59,7 @@ type CapacityConfig struct {
 type EdgeConfig struct {
 	Addresses       []string  `yaml:"addresses"`
 	UpstreamDNS     []string  `yaml:"upstream_dns"`
+	OriginDNSMode   string    `yaml:"origin_dns_mode"`
 	SNI             SNIConfig `yaml:"sni"`
 	LocalOutputDNAT bool      `yaml:"local_output_dnat"`
 }
@@ -117,6 +125,14 @@ func (c Config) Validate() error {
 	if c.Backend.UsageOutboxDir != "" && (c.Backend.URL == "" || c.Backend.ControlKey == "") {
 		return fmt.Errorf("backend.url and backend.control_key are required when usage_outbox_dir is configured")
 	}
+	if c.OriginDNS.Enabled {
+		if len(c.OriginDNS.Token) < 32 {
+			return fmt.Errorf("origin_dns.token must be at least 32 characters")
+		}
+		if _, _, err := net.SplitHostPort(c.OriginDNS.ListenAddress); err != nil {
+			return fmt.Errorf("origin_dns.listen_address: %w", err)
+		}
+	}
 	if c.Diagnostics.Enabled {
 		if c.Diagnostics.Token == "" {
 			return fmt.Errorf("diagnostics.token is required when enabled")
@@ -164,6 +180,9 @@ func (c Config) Validate() error {
 	}
 	if c.Agent.Capacity.SNI == 0 && c.Agent.Capacity.Route == 0 {
 		return fmt.Errorf("at least one agent capacity must be greater than zero")
+	}
+	if c.Edge.OriginDNSMode != "" && c.Edge.OriginDNSMode != "local" && c.Edge.OriginDNSMode != "dns_control" {
+		return fmt.Errorf("edge.origin_dns_mode must be local or dns_control")
 	}
 	if c.Edge.SNI.MaxConnections < 0 {
 		return fmt.Errorf("edge.sni.max_connections cannot be negative")

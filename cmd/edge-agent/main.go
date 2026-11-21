@@ -20,6 +20,7 @@ import (
 	"github.com/wraplink/edge-agent/internal/config"
 	"github.com/wraplink/edge-agent/internal/dataplane"
 	"github.com/wraplink/edge-agent/internal/inventory"
+	"github.com/wraplink/edge-agent/internal/origindns"
 	"github.com/wraplink/edge-agent/internal/sessioncontrol"
 	"github.com/wraplink/edge-agent/internal/sniproxy"
 	"github.com/wraplink/edge-agent/internal/usage"
@@ -77,6 +78,8 @@ func main() {
 		service.SetBackendHealth(inventory.AgentHealthClient{URL: cfg.Backend.URL, Key: cfg.Backend.ControlKey})
 	}
 	service.SetUpstreamDNS(cfg.Edge.UpstreamDNS)
+	service.SetOriginDNSMode(cfg.Edge.OriginDNSMode)
+	log.Printf("SNI origin DNS mode: %s", cfg.Edge.OriginDNSMode)
 	if cfg.Agent.Capacity.Route > 0 {
 		service.SetRouteInventory(inventory.Client{URL: cfg.Backend.URL, Key: cfg.Backend.ControlKey}, cfg.Backend.RoutePublicIPs)
 	}
@@ -93,6 +96,29 @@ func main() {
 	)
 	defer cancel()
 	startAccessDiagnostics(ctx, authorizer, cfg.Diagnostics)
+	if cfg.OriginDNS.Enabled {
+		if err := origindns.ValidateUpstreams(cfg.Edge.UpstreamDNS); err != nil {
+			log.Fatalf("origin DNS: %v", err)
+		}
+		listener, err := net.Listen("tcp", cfg.OriginDNS.ListenAddress)
+		if err != nil {
+			log.Fatalf("origin DNS listener: %v", err)
+		}
+		server := &http.Server{Handler: origindns.Handler{Token: cfg.OriginDNS.Token, Upstreams: cfg.Edge.UpstreamDNS}, ReadHeaderTimeout: 5 * time.Second}
+		go func() {
+			<-ctx.Done()
+			shutdownCtx, done := context.WithTimeout(context.Background(), 5*time.Second)
+			defer done()
+			_ = server.Shutdown(shutdownCtx)
+		}()
+		go func() {
+			if err := server.Serve(listener); err != nil && err != http.ErrServerClosed {
+				log.Printf("origin DNS listener failed: %v", err)
+				cancel()
+			}
+		}()
+		log.Printf("origin DNS API listening on %s (requires HTTPS reverse proxy)", listener.Addr())
+	}
 
 	var usageOutbox *usage.Outbox
 	if cfg.Backend.UsageOutboxDir != "" {
