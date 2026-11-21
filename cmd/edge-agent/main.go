@@ -78,6 +78,8 @@ func main() {
 		service.SetBackendHealth(inventory.AgentHealthClient{URL: cfg.Backend.URL, Key: cfg.Backend.ControlKey})
 	}
 	service.SetUpstreamDNS(cfg.Edge.UpstreamDNS)
+	service.SetOriginDNSMode(cfg.Edge.OriginDNSMode)
+	log.Printf("SNI origin DNS mode: %s",cfg.Edge.OriginDNSMode)
 	if cfg.Agent.Capacity.Route > 0 {
 		service.SetRouteInventory(inventory.Client{URL: cfg.Backend.URL, Key: cfg.Backend.ControlKey}, cfg.Backend.RoutePublicIPs)
 	}
