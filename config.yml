@@ -25,6 +25,8 @@ edge:
   # Enable local host Full Route forwarding (default: false).
   local_output_dnat: false
   # Independent DNS for original SNI destinations; never point to WrapLink DNS Control.
+  # local (default) or dns_control: resolve SNI origins through DNS Control API.
+  origin_dns_mode: local
   upstream_dns:
     - "1.1.1.1:53"
     - "8.8.8.8:53"
