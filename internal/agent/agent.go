@@ -110,7 +110,7 @@ func (a *Agent) syncRouteInventory(ctx context.Context) {
 	}
 }
 
-func (a *Agent) SetOriginDNSMode(mode string) {a.originDNSMode=mode}
+func (a *Agent) SetOriginDNSMode(mode string) { a.originDNSMode = mode }
 
 func (a *Agent) SetUpstreamDNS(servers []string) {
 	a.upstreamDNS = append([]string(nil), servers...)
@@ -710,15 +710,19 @@ func formatPortRange(start, end uint16) string {
 	return fmt.Sprintf("%d-%d", start, end)
 }
 
-func (a *Agent) resolveLeaseOrigin(ctx context.Context, domain string) ([]net.IP,error) {
- if a.originDNSMode=="dns_control" {
-  origin,err:=a.dnsClient.ResolveOriginIPv4(ctx,domain)
-  if err!=nil{return nil,err}
-  ip:=net.ParseIP(origin)
-  if ip==nil || ip.To4()==nil {return nil,fmt.Errorf("DNS Control returned invalid IPv4 address")}
-  return []net.IP{ip.To4()},nil
- }
- return a.resolveSNI(ctx,domain)
+func (a *Agent) resolveLeaseOrigin(ctx context.Context, domain string) ([]net.IP, error) {
+	if a.originDNSMode == "dns_control" {
+		origin, err := a.dnsClient.ResolveOriginIPv4(ctx, domain)
+		if err != nil {
+			return nil, err
+		}
+		ip := net.ParseIP(origin)
+		if ip == nil || ip.To4() == nil {
+			return nil, fmt.Errorf("DNS Control returned invalid IPv4 address")
+		}
+		return []net.IP{ip.To4()}, nil
+	}
+	return a.resolveSNI(ctx, domain)
 }
 
 func (a *Agent) resolveSNI(ctx context.Context, domain string) ([]net.IP, error) {

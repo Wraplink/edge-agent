@@ -198,9 +198,15 @@ func (c *Client) authorize(req *http.Request) {
 
 // ResolveOriginIPv4 asks DNS Control for an unmodified origin IPv4 address.
 // It uses the same authenticated control-plane connection as agent polling.
-func (c *Client) ResolveOriginIPv4(ctx context.Context, domain string) (string,error) {
- var response struct { DestinationIP string `json:"destination_ip"` }
- if err:=c.post(ctx,"/api/v1/dns/origin-ipv4",map[string]string{"domain":domain},&response);err!=nil{return "",err}
- if response.DestinationIP=="" {return "",fmt.Errorf("DNS Control returned no origin IPv4")}
- return response.DestinationIP,nil
+func (c *Client) ResolveOriginIPv4(ctx context.Context, domain string) (string, error) {
+	var response struct {
+		DestinationIP string `json:"destination_ip"`
+	}
+	if err := c.post(ctx, "/api/v1/dns/origin-ipv4", map[string]string{"domain": domain}, &response); err != nil {
+		return "", err
+	}
+	if response.DestinationIP == "" {
+		return "", fmt.Errorf("DNS Control returned no origin IPv4")
+	}
+	return response.DestinationIP, nil
 }
