@@ -17,6 +17,13 @@ type Config struct {
 	Agent       AgentConfig       `yaml:"agent"`
 	Edge        EdgeConfig        `yaml:"edge"`
 	Diagnostics DiagnosticsConfig `yaml:"diagnostics"`
+	OriginDNS OriginDNSConfig `yaml:"origin_dns"`
+}
+
+type OriginDNSConfig struct {
+	Enabled bool `yaml:"enabled"`
+	ListenAddress string `yaml:"listen_address"`
+	Token string `yaml:"token"`
 }
 
 type DiagnosticsConfig struct {
@@ -116,6 +123,10 @@ func Load(filename string) (Config, error) {
 func (c Config) Validate() error {
 	if c.Backend.UsageOutboxDir != "" && (c.Backend.URL == "" || c.Backend.ControlKey == "") {
 		return fmt.Errorf("backend.url and backend.control_key are required when usage_outbox_dir is configured")
+	}
+	if c.OriginDNS.Enabled {
+		if len(c.OriginDNS.Token)<32 {return fmt.Errorf("origin_dns.token must be at least 32 characters")}
+		if _,_,err:=net.SplitHostPort(c.OriginDNS.ListenAddress);err!=nil{return fmt.Errorf("origin_dns.listen_address: %w",err)}
 	}
 	if c.Diagnostics.Enabled {
 		if c.Diagnostics.Token == "" {
