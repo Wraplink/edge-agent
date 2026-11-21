@@ -41,3 +41,10 @@ diagnostics:
   enabled: false
   listen_address: "127.0.0.1:9091"
   token: "" # Set to ${WRAPLINK_DIAGNOSTICS_TOKEN} when enabling diagnostics
+
+# Optional authenticated origin DNS service for DNS Control.
+# Expose only through a TLS-terminating, IP-restricted reverse proxy.
+origin_dns:
+  enabled: false
+  listen_address: "127.0.0.1:9092"
+  token: ""
