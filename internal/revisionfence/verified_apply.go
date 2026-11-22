@@ -29,7 +29,8 @@ func (f *Fence) ApplyVerified(ctx context.Context,op Operation,dataplane Datapla
   observed,err:=dataplane.Verify(ctx,op)
   if err!=nil{return fmt.Errorf("verify public IP revision: %w",err)}
   if !observed{return ErrUnverifiedApplication}
-  return tracker.MarkApplied(ctx,f,op)
+  return nil
  })
- return err
+ if err!=nil{return err}
+ return tracker.MarkApplied(ctx,f,op)
 }
