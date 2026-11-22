@@ -3,6 +3,7 @@ package revisionfence
 import (
  "errors"
  "sync"
+ "fmt"
 )
 
 var (
@@ -20,12 +21,21 @@ type Operation struct {
  AttemptID string
 }
 
-// Fence is an in-memory revision guard for validating the ordering contract.
-// It is NOT durable: production callers must restore/persist state atomically
-// and prevent stale operations from executing after a newer one is accepted.
+// Fence validates revision ordering. NewPersistentFence persists accepted
+// revisions before returning success. This does not itself enforce dataplane
+// operations or prevent a concurrent stale operation already in flight.
 type Fence struct {
  mu sync.Mutex
  accepted map[string]Operation
+ store *FileStore
+}
+
+// NewPersistentFence restores accepted revisions and fails closed on invalid
+// persisted data. The caller must ensure exclusive ownership of the file.
+func NewPersistentFence(store FileStore)(*Fence,error){
+ operations,err:=store.Load()
+ if err!=nil{return nil,fmt.Errorf("load revision fence: %w",err)}
+ return &Fence{accepted:operations,store:&store},nil
 }
 
 func (f *Fence) Accept(op Operation) error {
@@ -41,6 +51,12 @@ func (f *Fence) Accept(op Operation) error {
    if op.AttemptID!=previous.AttemptID{return ErrConflictingRevision}
    return nil
   }
+ }
+ if f.store!=nil {
+  next:=make(map[string]Operation,len(f.accepted)+1)
+  for id,previous:=range f.accepted {next[id]=previous}
+  next[op.SubscriptionID]=op
+  if err:=f.store.Save(next);err!=nil{return fmt.Errorf("persist revision fence: %w",err)}
  }
  f.accepted[op.SubscriptionID]=op
  return nil
