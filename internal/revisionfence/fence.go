@@ -4,6 +4,7 @@ import (
  "errors"
  "sync"
  "fmt"
+ "context"
 )
 
 var (
@@ -67,4 +68,33 @@ func (f *Fence) Current(subscriptionID string)(Operation,bool){
  defer f.mu.Unlock()
  op,ok:=f.accepted[subscriptionID]
  return op,ok
+}
+
+// Execute serializes acceptance and dataplane work for one fence instance.
+// The operation is durably accepted before apply is called. An apply error
+// leaves the revision fenced, but MUST NOT be reported as applied. Callers
+// must reconcile actual dataplane state before retrying.
+func (f *Fence) Execute(ctx context.Context, op Operation, apply func(context.Context) error) error {
+ if apply==nil{return ErrInvalidOperation}
+ if err:=ctx.Err();err!=nil{return err}
+ f.mu.Lock()
+ defer f.mu.Unlock()
+ if err:=ctx.Err();err!=nil{return err}
+ if op.SubscriptionID==""||op.PublicIPID==""||op.AttemptID==""||op.Revision<1{return ErrInvalidOperation}
+ if previous,ok:=f.accepted[op.SubscriptionID];ok {
+  if op.Revision<previous.Revision{return ErrStaleRevision}
+  if op.Revision==previous.Revision && (op.PublicIPID!=previous.PublicIPID||op.AttemptID!=previous.AttemptID){return ErrConflictingRevision}
+ }
+ if f.accepted==nil{f.accepted=make(map[string]Operation)}
+ if previous,ok:=f.accepted[op.SubscriptionID];!ok||previous!=op {
+  if f.store!=nil {
+   next:=make(map[string]Operation,len(f.accepted)+1)
+   for id,v:=range f.accepted{next[id]=v}
+   next[op.SubscriptionID]=op
+   if err:=f.store.Save(next);err!=nil{return fmt.Errorf("persist revision fence: %w",err)}
+  }
+  f.accepted[op.SubscriptionID]=op
+ }
+ if err:=ctx.Err();err!=nil{return err}
+ return apply(ctx)
 }
