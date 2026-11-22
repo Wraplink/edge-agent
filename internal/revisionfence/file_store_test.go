@@ -10,6 +10,9 @@ import (
 func TestFileStoreRoundTrip(t *testing.T){
  path:=filepath.Join(t.TempDir(),"fence.json")
  store:=FileStore{Path:path}
+ if _,err:=store.Load();!errors.Is(err,ErrFenceStateMissing){t.Fatalf("missing state: %v",err)}
+ if err:=store.Bootstrap();err!=nil{t.Fatal(err)}
+ if err:=store.Bootstrap();!errors.Is(err,os.ErrExist){t.Fatalf("duplicate bootstrap: %v",err)}
  empty,err:=store.Load()
  if err!=nil||len(empty)!=0{t.Fatalf("empty=%v err=%v",empty,err)}
  op:=Operation{SubscriptionID:"sub",PublicIPID:"ip",Revision:8,AttemptID:"attempt"}
