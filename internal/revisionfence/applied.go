@@ -57,3 +57,14 @@ func (t *AppliedTracker) Confirmed(subscriptionID string)(Operation,bool){
  op,ok:=t.applied[subscriptionID]
  return op,ok
 }
+
+// IsCurrentApplied checks both the local observation and the current accepted
+// fence revision. Never use IsApplied alone to authorize a network ack.
+func (t *AppliedTracker) IsCurrentApplied(f *Fence,op Operation) bool {
+ if f==nil{return false}
+ f.mu.Lock()
+ defer f.mu.Unlock()
+ current,ok:=f.accepted[op.SubscriptionID]
+ if !ok||current!=op{return false}
+ return t.IsApplied(op)
+}
