@@ -9,6 +9,7 @@ import (
 
 func TestPersistentFenceSurvivesRestart(t *testing.T){
  store:=FileStore{Path:filepath.Join(t.TempDir(),"fence.json")}
+ if err:=store.Bootstrap();err!=nil{t.Fatal(err)}
  first,err:=NewPersistentFence(store)
  if err!=nil{t.Fatal(err)}
  old:=Operation{SubscriptionID:"sub",PublicIPID:"ip-a",Revision:5,AttemptID:"attempt-a"}
@@ -28,6 +29,7 @@ func TestPersistentFenceSurvivesRestart(t *testing.T){
 func TestPersistentFenceRejectsWriteFailureWithoutAccepting(t *testing.T){
  dir:=t.TempDir()
  store:=FileStore{Path:filepath.Join(dir,"fence.json")}
+ if err:=store.Bootstrap();err!=nil{t.Fatal(err)}
  fence,err:=NewPersistentFence(store)
  if err!=nil{t.Fatal(err)}
  op:=Operation{SubscriptionID:"sub",PublicIPID:"ip",Revision:1,AttemptID:"attempt"}
@@ -40,4 +42,15 @@ func TestPersistentFenceRejectsCorruptStartupState(t *testing.T){
  path:=filepath.Join(t.TempDir(),"fence.json")
  if err:=os.WriteFile(path,[]byte("not json"),0600);err!=nil{t.Fatal(err)}
  if _,err:=NewPersistentFence(FileStore{Path:path});err==nil{t.Fatal("corrupt state accepted")}
+}
+
+func TestPersistentFenceRejectsLostState(t *testing.T){
+ store:=FileStore{Path:filepath.Join(t.TempDir(),"fence.json")}
+ if _,err:=NewPersistentFence(store);!errors.Is(err,ErrFenceStateMissing){t.Fatalf("missing initial state: %v",err)}
+ if err:=store.Bootstrap();err!=nil{t.Fatal(err)}
+ fence,err:=NewPersistentFence(store)
+ if err!=nil{t.Fatal(err)}
+ if err:=fence.Accept(Operation{SubscriptionID:"sub",PublicIPID:"ip",Revision:8,AttemptID:"attempt"});err!=nil{t.Fatal(err)}
+ if err:=os.Remove(store.Path);err!=nil{t.Fatal(err)}
+ if _,err:=NewPersistentFence(store);!errors.Is(err,ErrFenceStateMissing){t.Fatalf("lost state silently reset: %v",err)}
 }
