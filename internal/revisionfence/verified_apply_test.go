@@ -60,3 +60,26 @@ func TestApplyVerifiedSkipsAlreadyInstalledRevision(t *testing.T){
  if d.applies!=0||d.verifies!=2{t.Fatalf("replayed applied state: applies=%d verifies=%d",d.applies,d.verifies)}
  if !tracker.IsCurrentApplied(f,op){t.Fatal("verified revision not current")}
 }
+
+type cancelAfterVerifyDataplane struct {
+ cancel context.CancelFunc
+ checks int
+}
+func (d *cancelAfterVerifyDataplane) Apply(context.Context,Operation)error{return nil}
+func (d *cancelAfterVerifyDataplane) Verify(context.Context,Operation)(bool,error){
+ d.checks++
+ if d.checks==1{return false,nil}
+ d.cancel()
+ return true,nil
+}
+
+func TestApplyVerifiedRecordsObservationAfterCancellation(t *testing.T){
+ f:=&Fence{}
+ tracker:=&AppliedTracker{}
+ ctx,cancel:=context.WithCancel(context.Background())
+ defer cancel()
+ d:=&cancelAfterVerifyDataplane{cancel:cancel}
+ op:=Operation{SubscriptionID:"sub",PublicIPID:"ip",Revision:7,AttemptID:"attempt"}
+ if err:=f.ApplyVerified(ctx,op,d,tracker);err!=nil{t.Fatalf("verified operation: %v",err)}
+ if !tracker.IsCurrentApplied(f,op){t.Fatal("lost confirmed local observation after cancellation")}
+}
