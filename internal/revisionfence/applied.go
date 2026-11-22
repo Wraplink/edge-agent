@@ -47,3 +47,13 @@ func (t *AppliedTracker) Reset(){
  defer t.mu.Unlock()
  t.applied=nil
 }
+
+// Confirmed returns the exact process-local confirmation for a subscription.
+// The caller must additionally verify authenticated node identity and durable
+// dataplane state before treating this as a network acknowledgement.
+func (t *AppliedTracker) Confirmed(subscriptionID string)(Operation,bool){
+ t.mu.RLock()
+ defer t.mu.RUnlock()
+ op,ok:=t.applied[subscriptionID]
+ return op,ok
+}
