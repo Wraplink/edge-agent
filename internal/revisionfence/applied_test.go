@@ -32,3 +32,16 @@ func TestAppliedTrackerRejectsCanceledContext(t *testing.T){
  if err:=tracker.MarkApplied(ctx,f,op);!errors.Is(err,context.Canceled){t.Fatalf("canceled: %v",err)}
  if tracker.IsApplied(op){t.Fatal("canceled confirmation recorded")}
 }
+
+func TestCurrentAppliedRejectsSupersededRevision(t *testing.T){
+ f:=&Fence{}
+ tracker:=&AppliedTracker{}
+ old:=Operation{SubscriptionID:"sub",PublicIPID:"ip-a",Revision:1,AttemptID:"attempt-a"}
+ next:=Operation{SubscriptionID:"sub",PublicIPID:"ip-b",Revision:2,AttemptID:"attempt-b"}
+ if err:=f.Accept(old);err!=nil{t.Fatal(err)}
+ if err:=tracker.MarkApplied(context.Background(),f,old);err!=nil{t.Fatal(err)}
+ if !tracker.IsCurrentApplied(f,old){t.Fatal("current applied revision not recognized")}
+ if err:=f.Accept(next);err!=nil{t.Fatal(err)}
+ if tracker.IsCurrentApplied(f,old){t.Fatal("superseded revision reported current")}
+ if tracker.IsCurrentApplied(f,next){t.Fatal("unverified new revision reported applied")}
+}
