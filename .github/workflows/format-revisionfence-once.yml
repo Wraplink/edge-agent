@@ -1,0 +1,34 @@
+name: Format revision fence (feature branch)
+on:
+  push:
+    branches:
+      - feature/public-ip-revision-fencing
+    paths:
+      - .github/workflows/format-revisionfence-once.yml
+permissions:
+  contents: write
+jobs:
+  format:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: feature/public-ip-revision-fencing
+          persist-credentials: true
+      - uses: actions/setup-go@v5
+        with:
+          go-version-file: go.mod
+      - name: Format and commit
+        run: |
+          gofmt -w internal/revisionfence/*.go
+          if ! git diff --quiet -- internal/revisionfence; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+            git add internal/revisionfence
+            git commit -m "style: gofmt revision fence files"
+            git push origin HEAD:feature/public-ip-revision-fencing
+          fi
+      - name: Verify formatting
+        run: test -z "$(gofmt -l internal/revisionfence/*.go)"
+      - name: Test revision fencing
+        run: go test ./internal/revisionfence/...
