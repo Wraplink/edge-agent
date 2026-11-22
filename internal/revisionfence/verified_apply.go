@@ -37,5 +37,9 @@ func (f *Fence) ApplyVerified(ctx context.Context,op Operation,dataplane Datapla
   return nil
  })
  if err!=nil{return err}
- return tracker.MarkApplied(ctx,f,op)
+ // The caller context may be canceled immediately after the dataplane was
+ // verified. Never lose an observed success solely due to that cancellation;
+ // still require the exact accepted revision to be current.
+ recordCtx:=context.WithoutCancel(ctx)
+ return tracker.MarkApplied(recordCtx,f,op)
 }
