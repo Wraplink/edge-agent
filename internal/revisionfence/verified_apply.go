@@ -25,6 +25,11 @@ type DataplaneOperation interface {
 func (f *Fence) ApplyVerified(ctx context.Context,op Operation,dataplane DataplaneOperation,tracker *AppliedTracker)error{
  if dataplane==nil||tracker==nil{return ErrInvalidOperation}
  err:=f.Execute(ctx,op,func(ctx context.Context)error{
+  // An identical accepted attempt may be replayed after a lost response.
+  // Inspect effective state first to avoid repeating non-idempotent writes.
+  alreadyApplied,preflightErr:=dataplane.Verify(ctx,op)
+  if preflightErr!=nil{return fmt.Errorf("preflight verify public IP revision: %w",preflightErr)}
+  if alreadyApplied{return nil}
   if err:=dataplane.Apply(ctx,op);err!=nil{return fmt.Errorf("apply public IP revision: %w",err)}
   observed,err:=dataplane.Verify(ctx,op)
   if err!=nil{return fmt.Errorf("verify public IP revision: %w",err)}
