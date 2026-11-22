@@ -26,7 +26,7 @@ func TestApplyVerifiedRequiresObservedDataplane(t *testing.T){
  d.observed=true
  if err:=f.ApplyVerified(context.Background(),op,d,tracker);err!=nil{t.Fatal(err)}
  if !tracker.IsApplied(op){t.Fatal("verified revision not recorded")}
- if d.applies!=2||d.verifies!=2{t.Fatalf("applies=%d verifies=%d",d.applies,d.verifies)}
+ if d.applies!=1||d.verifies!=3{t.Fatalf("applies=%d verifies=%d",d.applies,d.verifies)}
 }
 
 func TestApplyVerifiedFailsClosedOnApplyError(t *testing.T){
@@ -36,7 +36,7 @@ func TestApplyVerifiedFailsClosedOnApplyError(t *testing.T){
  failure:=errors.New("apply failed")
  d:=&fakeVerifiedDataplane{applyErr:failure}
  if err:=f.ApplyVerified(context.Background(),op,d,tracker);!errors.Is(err,failure){t.Fatalf("apply error: %v",err)}
- if d.verifies!=0||tracker.IsApplied(op){t.Fatal("failed apply was verified or acknowledged")}
+ if d.verifies!=1||tracker.IsApplied(op){t.Fatal("failed apply was verified or acknowledged")}
 }
 
 func TestApplyVerifiedRejectsStaleRevision(t *testing.T){
@@ -47,5 +47,16 @@ func TestApplyVerifiedRejectsStaleRevision(t *testing.T){
  d:=&fakeVerifiedDataplane{observed:true}
  if err:=f.ApplyVerified(context.Background(),newer,d,tracker);err!=nil{t.Fatal(err)}
  if err:=f.ApplyVerified(context.Background(),old,d,tracker);!errors.Is(err,ErrStaleRevision){t.Fatalf("stale: %v",err)}
- if d.applies!=1{t.Fatalf("stale operation reached dataplane: %d",d.applies)}
+ if d.applies!=0{t.Fatalf("stale operation reached dataplane: %d",d.applies)}
+}
+
+func TestApplyVerifiedSkipsAlreadyInstalledRevision(t *testing.T){
+ f:=&Fence{}
+ tracker:=&AppliedTracker{}
+ op:=Operation{SubscriptionID:"sub",PublicIPID:"ip",Revision:5,AttemptID:"attempt"}
+ d:=&fakeVerifiedDataplane{observed:true}
+ if err:=f.ApplyVerified(context.Background(),op,d,tracker);err!=nil{t.Fatal(err)}
+ if err:=f.ApplyVerified(context.Background(),op,d,tracker);err!=nil{t.Fatal(err)}
+ if d.applies!=0||d.verifies!=2{t.Fatalf("replayed applied state: applies=%d verifies=%d",d.applies,d.verifies)}
+ if !tracker.IsCurrentApplied(f,op){t.Fatal("verified revision not current")}
 }
