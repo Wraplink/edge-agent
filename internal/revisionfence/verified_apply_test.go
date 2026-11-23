@@ -125,3 +125,52 @@ func TestApplyVerifiedRecordsObservationAfterCancellation(t *testing.T) {
 		t.Fatal("lost confirmed local observation after cancellation")
 	}
 }
+
+func TestVerifyCurrentAppliedRequiresFreshObservation(t *testing.T) {
+	f := &Fence{}
+	tracker := &AppliedTracker{}
+	op := Operation{SubscriptionID: "sub", PublicIPID: "ip", Revision: 1, AttemptID: "attempt"}
+	d := &fakeVerifiedDataplane{observed: true}
+	if err := f.ApplyVerified(context.Background(), op, d, tracker); err != nil {
+		t.Fatal(err)
+	}
+	d.observed = false
+	ok, err := f.VerifyCurrentApplied(context.Background(), op, d, tracker)
+	if err != nil || ok {
+		t.Fatalf("removed dataplane still confirmed: ok=%v err=%v", ok, err)
+	}
+	d.observed = true
+	ok, err = f.VerifyCurrentApplied(context.Background(), op, d, tracker)
+	if err != nil || !ok {
+		t.Fatalf("live dataplane not confirmed: ok=%v err=%v", ok, err)
+	}
+	next := Operation{SubscriptionID: "sub", PublicIPID: "next", Revision: 2, AttemptID: "next"}
+	if err := f.Accept(next); err != nil {
+		t.Fatal(err)
+	}
+	before := d.verifies
+	ok, err = f.VerifyCurrentApplied(context.Background(), op, d, tracker)
+	if err != nil || ok || d.verifies != before {
+		t.Fatalf("superseded operation reached dataplane: ok=%v err=%v", ok, err)
+	}
+	ok, err = f.VerifyCurrentApplied(context.Background(), next, d, tracker)
+	if err != nil || ok || d.verifies != before {
+		t.Fatalf("unverified new revision confirmed: ok=%v err=%v", ok, err)
+	}
+}
+
+func TestVerifyCurrentAppliedFailsClosedOnObservationError(t *testing.T) {
+	f := &Fence{}
+	tracker := &AppliedTracker{}
+	op := Operation{SubscriptionID: "sub", PublicIPID: "ip", Revision: 1, AttemptID: "attempt"}
+	d := &fakeVerifiedDataplane{observed: true}
+	if err := f.ApplyVerified(context.Background(), op, d, tracker); err != nil {
+		t.Fatal(err)
+	}
+	failure := errors.New("dataplane inspection unavailable")
+	d.verifyErr = failure
+	ok, err := f.VerifyCurrentApplied(context.Background(), op, d, tracker)
+	if ok || !errors.Is(err, failure) {
+		t.Fatalf("observation error accepted: ok=%v err=%v", ok, err)
+	}
+}
