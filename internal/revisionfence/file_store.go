@@ -6,6 +6,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+
+	"golang.org/x/sys/unix"
 )
 
 // FileStore persists the latest accepted revision map across process restarts.
@@ -51,10 +53,23 @@ func (s FileStore) Load() (map[string]Operation, error) {
 	if s.Path == "" {
 		return nil, ErrInvalidOperation
 	}
-	data, err := os.ReadFile(s.Path)
-	if errors.Is(err, os.ErrNotExist) {
+	fd, err := unix.Open(s.Path, unix.O_RDONLY|unix.O_NOFOLLOW|unix.O_CLOEXEC|unix.O_NONBLOCK, 0)
+	if errors.Is(err, unix.ENOENT) {
 		return nil, ErrFenceStateMissing
 	}
+	if err != nil {
+		return nil, fmt.Errorf("open revision fence: %w", err)
+	}
+	f := os.NewFile(uintptr(fd), s.Path)
+	defer f.Close()
+	info, err := f.Stat()
+	if err != nil {
+		return nil, fmt.Errorf("stat revision fence: %w", err)
+	}
+	if !info.Mode().IsRegular() {
+		return nil, errors.New("revision fence must be a regular file")
+	}
+	data, err := os.ReadFile("/proc/self/fd/" + fmt.Sprint(fd))
 	if err != nil {
 		return nil, fmt.Errorf("read revision fence: %w", err)
 	}
