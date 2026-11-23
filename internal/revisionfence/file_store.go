@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 
@@ -69,7 +70,7 @@ func (s FileStore) Load() (map[string]Operation, error) {
 	if !info.Mode().IsRegular() {
 		return nil, errors.New("revision fence must be a regular file")
 	}
-	data, err := os.ReadFile("/proc/self/fd/" + fmt.Sprint(fd))
+	data, err := io.ReadAll(f)
 	if err != nil {
 		return nil, fmt.Errorf("read revision fence: %w", err)
 	}
