@@ -57,3 +57,37 @@ func (f *Fence) ApplyVerified(ctx context.Context, op Operation, dataplane Datap
 	recordCtx := context.WithoutCancel(ctx)
 	return tracker.MarkApplied(recordCtx, f, op)
 }
+
+// VerifyCurrentApplied re-observes the live dataplane before returning a
+// positive confirmation. The process-local tracker alone is never sufficient:
+// rules may have been removed after the original successful application.
+// Holding the fence lock prevents a newer revision from being accepted while
+// the observation is made. Callers still need authenticated node identity and
+// durable acknowledgement storage before reporting success to the controller.
+func (f *Fence) VerifyCurrentApplied(ctx context.Context, op Operation, dataplane DataplaneOperation, tracker *AppliedTracker) (bool, error) {
+	if f == nil || dataplane == nil || tracker == nil {
+		return false, ErrInvalidOperation
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	if current, ok := f.accepted[op.SubscriptionID]; !ok || current != op {
+		return false, nil
+	}
+	if !tracker.IsApplied(op) {
+		return false, nil
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	observed, err := dataplane.Verify(ctx, op)
+	if err != nil {
+		return false, fmt.Errorf("observe current public IP dataplane: %w", err)
+	}
+	if err := ctx.Err(); err != nil {
+		return false, err
+	}
+	return observed, nil
+}
