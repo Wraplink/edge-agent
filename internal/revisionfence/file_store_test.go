@@ -63,3 +63,26 @@ func TestFileStoreFailsClosedOnMissingDirectory(t *testing.T) {
 		t.Fatalf("nil map: %v", err)
 	}
 }
+
+func TestFileStoreLoadRejectsSymlinkWithoutReadingTarget(t *testing.T) {
+	dir := t.TempDir()
+	target := filepath.Join(dir, "external.json")
+	content := []byte("{}")
+	if err := os.WriteFile(target, content, 0600); err != nil {
+		t.Fatal(err)
+	}
+	link := filepath.Join(dir, "fence.json")
+	if err := os.Symlink(target, link); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := (FileStore{Path: link}).Load(); err == nil {
+		t.Fatal("symlinked revision fence must be rejected")
+	}
+	after, err := os.ReadFile(target)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if string(after) != string(content) {
+		t.Fatal("external state changed")
+	}
+}
