@@ -6,8 +6,37 @@ import (
 	"testing"
 
 	"github.com/google/nftables"
+	"github.com/google/nftables/binaryutil"
 	"github.com/google/nftables/expr"
 )
+
+func TestPreroutingGuardExemptsOnlyEstablishedReplies(t *testing.T) {
+	rule := establishedReplyExpressions()
+	state, ok := rule[0].(*expr.Ct)
+	if !ok || state.Key != expr.CtKeySTATE {
+		t.Fatal("reply exemption must read conntrack state")
+	}
+	mask, ok := rule[1].(*expr.Bitwise)
+	if !ok || !bytes.Equal(mask.Mask, binaryutil.NativeEndian.PutUint32(expr.CtStateBitESTABLISHED)) {
+		t.Fatal("reply exemption must match established state only")
+	}
+	stateMatch, ok := rule[2].(*expr.Cmp)
+	if !ok || stateMatch.Op != expr.CmpOpNeq || !bytes.Equal(stateMatch.Data, binaryutil.NativeEndian.PutUint32(0)) {
+		t.Fatal("non-established packets must fall through")
+	}
+	direction, ok := rule[3].(*expr.Ct)
+	if !ok || direction.Key != expr.CtKeyDIRECTION {
+		t.Fatal("reply exemption must read conntrack direction")
+	}
+	reply, ok := rule[4].(*expr.Cmp)
+	if !ok || reply.Op != expr.CmpOpEq || !bytes.Equal(reply.Data, []byte{1}) {
+		t.Fatal("original-direction packets must fall through")
+	}
+	verdict, ok := rule[5].(*expr.Verdict)
+	if !ok || verdict.Kind != expr.VerdictReturn {
+		t.Fatal("established replies must exit the entitlement chain")
+	}
+}
 
 func TestGuardRulesDropUnauthorizedSource(t *testing.T) {
 	for _, tc := range []struct {

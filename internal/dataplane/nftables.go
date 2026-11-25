@@ -76,13 +76,10 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 		Hooknum:  nftables.ChainHookOutput,
 		Priority: nftables.ChainPriorityNATDest,
 	})
-	guardPrerouting := conn.AddChain(&nftables.Chain{
-		Table:    table,
-		Name:     guardPreroutingName,
-		Type:     nftables.ChainTypeFilter,
-		Hooknum:  nftables.ChainHookPrerouting,
-		Priority: nftables.ChainPriorityRaw,
-	})
+	guardPrerouting, err := setupPreroutingGuard(conn, table)
+	if err != nil {
+		return nil, err
+	}
 	guardOutput := conn.AddChain(&nftables.Chain{
 		Table:    table,
 		Name:     guardOutputName,
@@ -125,6 +122,59 @@ func NewNFT(localOutput ...bool) (*NFT, error) {
 		entitledSet:        entitledSet,
 		routes:             make(map[string]*routeState),
 	}, nil
+}
+
+func setupPreroutingGuard(conn *nftables.Conn, table *nftables.Table) (*nftables.Chain, error) {
+	chains, err := conn.ListChainsOfTableFamily(table.Family)
+	if err != nil {
+		return nil, fmt.Errorf("list nftables chains: %w", err)
+	}
+	var existingRules []*nftables.Rule
+	for _, chain := range chains {
+		if chain.Table.Name != table.Name || chain.Name != guardPreroutingName {
+			continue
+		}
+		if chain.Priority != nil && *chain.Priority == *nftables.ChainPriorityMangle {
+			return chain, nil
+		}
+		existingRules, err = conn.GetRules(table, chain)
+		if err != nil {
+			return nil, fmt.Errorf("read existing prerouting guards: %w", err)
+		}
+		// Replace the raw-priority chain and restore its guards in the same batch.
+		conn.FlushChain(chain)
+		conn.DelChain(chain)
+		break
+	}
+	chain := conn.AddChain(&nftables.Chain{
+		Table:    table,
+		Name:     guardPreroutingName,
+		Type:     nftables.ChainTypeFilter,
+		Hooknum:  nftables.ChainHookPrerouting,
+		Priority: nftables.ChainPriorityMangle, // After conntrack, before DNAT.
+	})
+	conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: establishedReplyExpressions()})
+	for _, rule := range existingRules {
+		conn.AddRule(&nftables.Rule{Table: table, Chain: chain, Exprs: rule.Exprs, UserData: rule.UserData})
+	}
+	return chain, nil
+}
+
+// Skip this entitlement chain for replies on established connections.
+// Original-direction, invalid and untracked traffic still reaches the guards.
+func establishedReplyExpressions() []expr.Any {
+	return []expr.Any{
+		&expr.Ct{Key: expr.CtKeySTATE, Register: 1},
+		&expr.Bitwise{
+			SourceRegister: 1, DestRegister: 1, Len: 4,
+			Mask: binaryutil.NativeEndian.PutUint32(expr.CtStateBitESTABLISHED),
+			Xor:  binaryutil.NativeEndian.PutUint32(0),
+		},
+		&expr.Cmp{Op: expr.CmpOpNeq, Register: 1, Data: binaryutil.NativeEndian.PutUint32(0)},
+		&expr.Ct{Key: expr.CtKeyDIRECTION, Register: 1},
+		&expr.Cmp{Op: expr.CmpOpEq, Register: 1, Data: []byte{1}}, // IP_CT_DIR_REPLY
+		&expr.Verdict{Kind: expr.VerdictReturn},
+	}
 }
 
 func (n *NFT) ReplaceAllowedSources(
@@ -465,7 +515,7 @@ func (n *NFT) RemoveRoute(
 	return nil
 }
 
-// makeGuardRules installs fail-closed filtering before NAT/conntrack. An
+// makeGuardRules installs fail-closed filtering before destination NAT. An
 // unauthorized source is dropped even when no DNAT rule matches. Both local
 // OUTPUT and remote PREROUTING paths are protected.
 func (n *NFT) makeGuardRules(leaseID string, address net.IP) []*nftables.Rule {
